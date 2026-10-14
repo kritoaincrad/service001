@@ -91,3 +91,27 @@ def test_config_agents_and_duplicate_install(tmp_path, isolated_home):
     project = tmp_path / "proj"
     installer.install(installer.settings_path("local", project), python="py")
     assert statuses(doctor.check_project(project))["Bu projede ikinci kurulum var"] == doctor.WARN
+
+
+def _history_with(models, tag="a"):
+    from cc_optimizer import history
+
+    con = history.connect()
+    cols = [r[1] for r in con.execute("PRAGMA table_info(sessions)")]
+    for i, m in enumerate(models):
+        row = dict.fromkeys(cols, 0)
+        row.update(session_id=f"{tag}{i}", project="p", first_ts=f"2026-10-1{tag == 'b'}{i}T00:00:00Z", models_main=json.dumps({m: 10}))
+        con.execute(f"INSERT INTO sessions ({','.join(row)}) VALUES ({','.join('?' * len(row))})", list(row.values()))
+    con.commit()
+    con.close()
+
+
+def test_model_check_flags_ignored_default(tmp_path):
+    path = installed(tmp_path)
+    settings = json.loads(path.read_text())
+    settings["model"] = "sonnet"
+    path.write_text(json.dumps(settings))
+    _history_with(["claude-opus-5-5"] * 3)
+    assert statuses(doctor.check_model(path))["Varsayılan model uygulanmıyor"] == doctor.WARN
+    _history_with(["claude-sonnet-5-5"] * 3, "b")
+    assert statuses(doctor.check_model(path))["Varsayılan model"] == doctor.OK

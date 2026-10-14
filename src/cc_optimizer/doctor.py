@@ -212,6 +212,40 @@ def check_agents(agents_dir: Path) -> list[Check]:
     return [Check(OK, "Alt ajanlar güncel", ", ".join(present))]
 
 
+def check_model(settings_file: Path, recent: int = 3) -> list[Check]:
+    """Does the configured default model match what the latest sessions actually ran on?"""
+    from . import history
+
+    try:
+        wanted = json.loads(settings_file.read_text(encoding="utf-8")).get("model")
+    except (OSError, ValueError):
+        return []
+    if not isinstance(wanted, str) or not history.db_path().exists():
+        return []
+    try:
+        con = history.connect()
+        found = con.execute("SELECT models_main FROM sessions ORDER BY first_ts DESC LIMIT ?", (recent,)).fetchall()
+        con.close()
+    except Exception:
+        return []
+    ran = []
+    for (raw,) in found:
+        counts = json.loads(raw or "{}")
+        if counts:
+            ran.append(max(counts, key=counts.get))
+    if not ran:
+        return []
+    family = wanted.lower().split("[")[0].replace("claude-", "")
+    family = next((f for f in ("opus", "sonnet", "haiku", "fable") if f in family), family)
+    off = [m for m in ran if family not in m]
+    if len(off) * 2 <= len(ran):
+        return [Check(OK, "Varsayılan model", f"{wanted}, son oturumlar da buna uygun")]
+    return [Check(WARN, "Varsayılan model uygulanmıyor",
+                  f"Ayarda model {wanted}, ama son {len(ran)} oturumun {len(off)} tanesi {off[0]} ile çalıştı. "
+                  "Sohbet açılırken modelin hangi dosyadan geldiğine bakın (başlıkta yazar). "
+                  "Proje ayarı, ANTHROPIC_MODEL ortam değişkeni veya seçicide kaydedilmiş başka bir model ayarı geçersiz kılıyor olabilir")]
+
+
 def check_history() -> list[Check]:
     from . import history
 
@@ -265,6 +299,7 @@ def run_all(settings_file: Path, project: Path, projects_root: Path) -> list[Che
     checks += check_activity(projects_root)
     checks += check_events()
     checks += check_history()
+    checks += check_model(settings_file)
     checks += check_config()
     checks += check_agents(installer.agents_dir(settings_file))
     checks += check_project(project)
