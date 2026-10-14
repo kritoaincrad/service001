@@ -1,0 +1,52 @@
+# LLM Gateway configuration. Copy to config.yaml and edit.
+
+# SQLite file for the request log. Prompt content is never stored.
+db_path: data/gateway.db
+
+# Tokenizer used for the per-segment input estimate.
+tokenizer: o200k_base
+
+# For streaming OpenAI-style calls, ask the provider for a final usage chunk.
+# The gateway removes that chunk again if the client did not ask for it.
+inject_stream_usage: true
+
+request_timeout_s: 600
+
+# Optional client authentication. Map each gateway key to a tenant name.
+# When empty, clients may label themselves with the X-Gateway-Tenant header.
+# gateway_keys:
+#   "replace-with-a-long-random-key": team-a
+
+providers:
+  - name: openai
+    type: openai
+    base_url: https://api.openai.com/v1
+    # Set api_key_env to inject a key held by the gateway.
+    # Leave it out to pass the client's own key through.
+    # api_key_env: OPENAI_API_KEY
+    models: ["gpt-", "o1", "o3", "o4"]
+
+  - name: anthropic
+    type: anthropic
+    base_url: https://api.anthropic.com/v1
+    # api_key_env: ANTHROPIC_API_KEY
+    models: ["claude-"]
+
+  # Any OpenAI-compatible server: vLLM, Ollama, Azure OpenAI, OpenRouter, ...
+  # - name: local
+  #   type: openai
+  #   base_url: http://localhost:11434/v1
+  #   models: ["llama", "qwen"]
+  #   supports_stream_usage: false
+
+default_provider: openai
+
+# USD per one million tokens, keyed by model name or model name prefix.
+# No prices ship with the gateway: copy them from each provider's pricing page.
+# Requests for models without a price are still logged, only without cost.
+pricing: {}
+#  "model-name-or-prefix":
+#    input: 0.0
+#    output: 0.0
+#    cached_input: 0.0   # optional, defaults to input
+#    cache_write: 0.0    # optional, defaults to input

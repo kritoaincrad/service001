@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "llm-gateway"
+version = "0.1.0"
+description = "Enterprise LLM gateway - phase 1: transparent measurement proxy"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
+    "httpx>=0.27",
+    "pyyaml>=6",
+    "pydantic>=2.7",
+    "tiktoken>=0.8",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+llm-gateway = "llm_gateway.cli:main"
+cc-optimizer = "cc_optimizer.cli:main"
+
+[tool.setuptools.package-data]
+cc_optimizer = ["agents/*.md"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
