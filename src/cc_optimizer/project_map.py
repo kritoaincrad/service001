@@ -60,11 +60,55 @@ def index_path(project: Path) -> Path:
     return project / ".claude" / INDEX_NAME
 
 
+# Folders where a monorepo keeps its parts, and folders that only hold other things. Neither may be guessed
+# from a fixed list of manifests: any folder with source code is a project, so the guards work in every one.
+PART_DIRS = ("frontend", "backend", "client", "server", "web", "api", "app", "apps", "packages", "services", "src")
+CONTAINER_DIRS = {"desktop", "documents", "downloads", "onedrive", "dropbox", "projects", "repos", "source", "work",
+                  "workspace", "github", "code", "dev", "users", "home", "windows", "program files", "appdata"}
+SCAN_LIMIT = 400  # folder entries looked at, so a huge folder cannot slow a hook down
+
+
+def _has_marker(path: Path) -> bool:
+    return any((path / m).exists() for m in MARKERS) or any(next(path.glob(g), None) for g in MARKER_GLOBS)
+
+
+def _subdirs(path: Path) -> list[Path]:
+    found: list[Path] = []
+    with os.scandir(path) as entries:
+        for i, entry in enumerate(entries):
+            if i >= SCAN_LIMIT:
+                break
+            if entry.is_dir(follow_symlinks=False) and entry.name not in SKIP_DIRS and not entry.name.startswith("."):
+                found.append(Path(entry.path))
+    return found
+
+
+def _has_source(path: Path) -> bool:
+    with os.scandir(path) as entries:
+        for i, entry in enumerate(entries):
+            if i >= SCAN_LIMIT:
+                break
+            if entry.is_file() and Path(entry.name).suffix.lower() in SOURCE_SUFFIXES:
+                return True
+    return False
+
+
 def is_project(path: Path) -> bool:
+    """Is this folder a project the guards and the map should work for? A manifest or .git says yes at once. Without
+    one, source code in the folder or one level down does, unless the folder only holds several projects."""
     try:
-        if not path.is_dir() or path.resolve() == Path.home().resolve():
+        if not path.is_dir() or path.resolve() == Path.home().resolve() or path.parent == path:
             return False
-        return any((path / m).exists() for m in MARKERS) or any(next(path.glob(g), None) for g in MARKER_GLOBS)
+        if path.name.lower() in CONTAINER_DIRS and not _has_marker(path):
+            return False
+        if _has_marker(path):
+            return True
+        subs = _subdirs(path)
+        if any(_has_marker(d) for d in subs if d.name.lower() in PART_DIRS):
+            return True
+        if sum(1 for d in subs if d.name.lower() not in PART_DIRS and _has_marker(d)) >= 2:
+            return False  # a folder of projects, not a project
+        return _has_source(path) or any(_has_source(d) for d in subs)
     except OSError:
         return False
 
@@ -100,6 +144,7 @@ def _all_files(project: Path) -> list[str]:
             out = subprocess.run(
                 ["git", "-C", str(project), "ls-files", "--cached", "--others", "--exclude-standard", "-z"],
                 capture_output=True, timeout=5, check=True,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),  # no console window flashing up from a hook
             ).stdout.decode("utf-8", "replace")
             files = [f for f in out.split("\0") if f and not any(p in SKIP_DIRS for p in f.split("/")[:-1])]
             return sorted(files)[:MAX_FILES]

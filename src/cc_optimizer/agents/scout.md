@@ -1,6 +1,6 @@
 ---
 name: scout
-description: Fast, low-cost read-only helper running on Haiku. Use it to find files, symbols and usages, to read and summarize code, logs or docs, and to answer factual questions about the codebase. Give it one precise question. It returns a short answer with file:line references.
+description: Haiku, read-only and cheap: find files, symbols and usages, read and summarize code, logs or docs. Give it one precise question; it answers briefly with file:line references.
 tools: Read, Grep, Glob, Bash
 model: haiku
 ---

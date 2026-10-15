@@ -1,6 +1,6 @@
 ---
 name: expert
-description: Deep reasoning on Fable, for the hardest problems only - subtle bugs that resisted earlier attempts, concurrency or security issues, architecture decisions with many trade-offs, complex algorithms. Expensive, so use it rarely and give it the full relevant context in the prompt.
+description: Fable for the hardest problems only: subtle bugs that resisted earlier attempts, concurrency or security issues, complex trade-offs. Expensive: give it the full context.
 model: fable
 ---
 

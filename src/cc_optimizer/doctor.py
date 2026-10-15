@@ -90,7 +90,7 @@ def check_settings(path: Path) -> tuple[list[Check], str | None]:
     for groups in ours.values():
         for hook in groups[0].get("hooks", []):
             if installer.MARKER in " ".join(map(str, hook.get("args") or [])):
-                python = hook.get("command")
+                python = hook.get("command") and installer.console(hook["command"])  # probes want stderr
                 break
         if python:
             break

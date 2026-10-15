@@ -1,6 +1,6 @@
 ---
 name: architect
-description: Advanced work on Opus, for when the conversation runs on a smaller model - architecture and design decisions, hard debugging, risky changes across many files, performance or data-model problems. Give it the goal, the constraints and the relevant files. It can investigate and implement, and reports what it decided and why.
+description: Opus for architecture and design decisions, hard debugging and risky multi-file changes when the conversation runs on a smaller model. Give it the goal, constraints and relevant files.
 model: opus
 ---
 

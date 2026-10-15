@@ -57,9 +57,26 @@ def settings_path(scope: str, project_dir: str | Path | None = None) -> Path:
     return base / ".claude" / ("settings.json" if scope == "project" else "settings.local.json")
 
 
+def windowless(python: str) -> str:
+    """On Windows, python.exe opens a console window for every hook call; the pythonw.exe next to it does not
+    (it still reads stdin and writes stdout when they are pipes, as they are for hooks and the status line)."""
+    path = Path(python)
+    if os.name == "nt" and path.name.lower() == "python.exe" and path.with_name("pythonw.exe").is_file():
+        return str(path.with_name("pythonw.exe"))
+    return python
+
+
+def console(python: str) -> str:
+    """The python.exe that belongs to a pythonw.exe: it reports errors on stderr, which doctor wants to read."""
+    path = Path(python)
+    if path.name.lower() == "pythonw.exe" and path.with_name("python.exe").is_file():
+        return str(path.with_name("python.exe"))
+    return python
+
+
 def _hook(python: str, event: str) -> dict[str, Any]:
     # Exec form: no shell, so paths with spaces or backslashes need no quoting.
-    return {"type": "command", "command": python, "args": ["-m", MARKER, "hook", event], "timeout": 10}
+    return {"type": "command", "command": windowless(python), "args": ["-m", MARKER, "hook", event], "timeout": 10}
 
 
 def build_hooks(python: str) -> dict[str, list[dict[str, Any]]]:
@@ -74,7 +91,7 @@ def build_hooks(python: str) -> dict[str, list[dict[str, Any]]]:
 
 def statusline_command(python: str) -> str:
     # statusLine has no exec form and runs through a shell.
-    return f'"{Path(python).as_posix()}" -m {MARKER} statusline'
+    return f'"{Path(windowless(python)).as_posix()}" -m {MARKER} statusline'
 
 
 def _is_ours(group: Any) -> bool:

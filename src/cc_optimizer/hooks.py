@@ -31,13 +31,11 @@ SESSION_GUIDANCE = (
 
 ROUTING_RULES = (
     "Model routing: match the model to the work and delegate self-contained subtasks. "
-    "Down: scout (Haiku) for finding and reading code, logs, docs; worker (Sonnet) for clearly specified "
-    "implementation, tests, mechanical refactors. "
-    "Up: architect (Opus) for architecture decisions, hard debugging and risky multi-file changes when you run on "
-    "a smaller model; expert (Fable) only for the hardest problems. "
-    "If most of this session will be advanced work and you run on Haiku or Sonnet, tell the user once that "
-    "/model opus fits better. Keep work that needs this conversation's context, or a single quick step, here. "
-    "Ask subagents for short reports."
+    "scout (Haiku) finds and reads code, logs, docs; worker (Sonnet) does specified implementation, tests, "
+    "mechanical refactors; architect (Opus) takes design decisions, hard debugging, risky multi-file changes when "
+    "you run on a smaller model; expert (Fable) only the hardest problems. "
+    "If most of this session is advanced work on Haiku or Sonnet, tell the user once that /model opus fits better. "
+    "Keep work that needs this conversation's context here. Ask subagents for short reports."
 )
 
 MODEL_ADVICE = (
@@ -314,11 +312,10 @@ def routing_available(cwd: str | None) -> bool:
 def map_guidance(map_file: Path) -> str:
     """What Claude is told about the project map. Only paths and how to use them: no map content enters the context."""
     return (
-        f"Project map: {map_file.as_posix()} (layout, scripts, pages and their files, API routes, kept up to date). "
-        "Read it before exploring the codebase instead of listing directories. To find where a page, route "
-        "or symbol lives, grep project-index.md in the same folder (one line per item: name  file:line  kind) "
-        "instead of searching the tree. Its `deps` rows list what imports a file, so grep the file name there "
-        "(or run `cc-optimizer impact <file>`) to see what a change would affect."
+        f"Project map: {map_file.as_posix()} (layout, scripts, pages, routes). Read it before exploring instead of "
+        "listing directories. To find a page, route or symbol, grep project-index.md in the same folder "
+        "(name  file:line  kind). Its `deps` rows show what imports a file; `cc-optimizer impact <file>` shows what "
+        "a change affects."
     )
 
 

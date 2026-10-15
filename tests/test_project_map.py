@@ -213,3 +213,40 @@ def test_project_settings_ignore_and_custom_routes(webapp):
     text = path.read_text(encoding="utf-8")
     assert "Legacy.tsx" not in text and "Orphan.tsx" not in text
     assert "/promo  src/cms.ts (PromoPage)" in text
+
+
+def test_a_monorepo_root_without_a_manifest_is_a_project(tmp_path):
+    root = tmp_path / "suite"
+    (root / "frontend").mkdir(parents=True)
+    (root / "frontend" / "package.json").write_text("{}", encoding="utf-8")
+    assert project_map.is_project(root)
+    holder = tmp_path / "many-projects"  # only holds projects: not one itself
+    (holder / "alpha").mkdir(parents=True)
+    (holder / "alpha" / "package.json").write_text("{}", encoding="utf-8")
+    assert not project_map.is_project(holder)
+
+
+def test_any_folder_with_source_code_is_a_project_without_a_manifest(tmp_path):
+    odd = tmp_path / "odd-layout"
+    (odd / "Source").mkdir(parents=True)
+    (odd / "Source" / "Program.cs").write_text("class P {}", encoding="utf-8")
+    assert project_map.is_project(odd)  # no manifest, no .git, unusual folder name
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    (scripts / "run.sh").write_text("echo hi", encoding="utf-8")
+    assert project_map.is_project(scripts)
+    docs = tmp_path / "just-notes"
+    docs.mkdir()
+    (docs / "notes.txt").write_text("hello", encoding="utf-8")
+    assert not project_map.is_project(docs)  # nothing to map
+    holder = tmp_path / "Desktop"  # a folder that holds projects
+    for name in ("a", "b"):
+        (holder / name).mkdir(parents=True)
+        (holder / name / "package.json").write_text("{}", encoding="utf-8")
+    (holder / "x.py").write_text("print(1)", encoding="utf-8")
+    assert not project_map.is_project(holder)
+    lone = tmp_path / "workspace2"
+    (lone / "a").mkdir(parents=True)
+    (lone / "a" / "package.json").write_text("{}", encoding="utf-8")
+    (lone / "x.py").write_text("print(1)", encoding="utf-8")
+    assert project_map.is_project(lone)

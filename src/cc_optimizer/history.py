@@ -33,7 +33,7 @@ DEFAULT_CALIBRATION = 1.7  # measured on the first baseline; used until enough s
 SYNC_INTERVAL = 3600  # background sync at most once an hour
 # Text that only the guards put into a transcript.
 GUARD_MARKERS = (b"Token efficiency rules for this session", b"[token guard]", b"[model advice]",
-                 b"Model routing: delegate", b"cc-optimizer project map", b"grep project-index.md in the same folder")
+                 b"Model routing: ", b"cc-optimizer project map", b"grep project-index.md in the same folder")
 SOURCES = {"read": ("tool:Read",), "shell": ("tool:Bash", "tool:PowerShell"), "write": ("tool:Write",),
            "output": ("model_output",)}
 
@@ -230,7 +230,8 @@ def maybe_sync_in_background(interval: float = SYNC_INTERVAL) -> bool:
         kwargs: dict[str, Any] = {"stdin": subprocess.DEVNULL, "stdout": subprocess.DEVNULL,
                                   "stderr": subprocess.DEVNULL, "close_fds": True}
         if os.name == "nt":
-            kwargs["creationflags"] = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+            # No console window, and the child outlives this hook (DETACHED_PROCESS would make its own children open one)
+            kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP
         else:
             kwargs["start_new_session"] = True
         subprocess.Popen([sys.executable, "-m", "cc_optimizer", "history", "--sync-only"], **kwargs)

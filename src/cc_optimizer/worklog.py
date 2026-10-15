@@ -277,8 +277,8 @@ def context_text(project: Path, session_id: str | None, transcript: str | None, 
     current = extract(Path(transcript)) if source == "compact" and transcript else None
     if not lines and not current:
         return None
-    text = [f"Work log of earlier sessions in this project: {path.as_posix()} (requests, changed files, outcomes; "
-            "newest first). Read the matching entry before continuing or changing earlier work."]
+    text = [f"Work log of earlier sessions: {path.as_posix()} (newest first). "
+            "Read the matching entry before continuing earlier work."]
     if lines:
         text.append("Recent sessions:\n" + "\n".join(f"- {line}" for line in lines))
     if current:

@@ -1,6 +1,6 @@
 ---
 name: worker
-description: Implementation helper running on Sonnet. Use it for clearly specified, self-contained changes - implementing a described function or component, writing or fixing tests, mechanical refactors and renames, running a build and fixing straightforward errors. Give it the exact goal, the files involved and how to verify the result.
+description: Sonnet for clearly specified, self-contained changes: implement a described function, write or fix tests, mechanical refactors, run a build and fix simple errors. Give it the goal, files and how to verify.
 model: sonnet
 ---
 
