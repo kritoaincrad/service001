@@ -24,14 +24,16 @@ from datetime import date
 from pathlib import Path
 from typing import Any, Iterable
 
+from .compare import CHEAP_MODELS
 from .guard_config import home
+from .i18n import L, decimal, plural
 
 SCHEMA_VERSION = 1
 DEFAULT_CALIBRATION = 1.7  # measured on the first baseline; used until enough samples exist
 SYNC_INTERVAL = 3600  # background sync at most once an hour
 # Text that only the guards put into a transcript.
 GUARD_MARKERS = (b"Token efficiency rules for this session", b"[token guard]", b"[model advice]",
-                 b"Model routing: delegate", b"cc-optimizer project map")
+                 b"Model routing: delegate", b"cc-optimizer project map", b"grep project-index.md in the same folder")
 SOURCES = {"read": ("tool:Read",), "shell": ("tool:Bash", "tool:PowerShell"), "write": ("tool:Write",),
            "output": ("model_output",)}
 
@@ -212,11 +214,16 @@ def _update_worklogs(main_transcripts: list[Path], root: Path) -> None:
                 continue
 
 
+CLOCK_SKEW = 5.0  # seconds
+
+
 def maybe_sync_in_background(interval: float = SYNC_INTERVAL) -> bool:
     """Start a detached sync when the last one is older than `interval`. Never blocks the hook."""
     stamp = home() / "history.sync"
     try:
-        if stamp.exists() and time.time() - stamp.stat().st_mtime < interval:
+        # The file clock can run a little ahead of time.time(): a stamp up to CLOCK_SKEW in the future is still fresh.
+        # interval <= 0 means "always due".
+        if interval > 0 and stamp.exists() and -CLOCK_SKEW <= time.time() - stamp.stat().st_mtime < interval:
             return False
         stamp.parent.mkdir(parents=True, exist_ok=True)
         stamp.touch()
@@ -296,6 +303,54 @@ def as_report(selected: list[sqlite3.Row]) -> dict[str, Any]:
     }
 
 
+def session_samples(before: list[sqlite3.Row], after: list[sqlite3.Row]) -> dict[str, tuple[list, list]]:
+    """Per-session values for compare(): the noise a before/after difference has to beat. A float is a session's
+    own value; a (numerator, denominator) pair is a ratio whose side value is sum / sum, like the headline."""
+    def cheap(r: sqlite3.Row, column: str) -> tuple[float, float] | None:
+        models = json.loads(r[column] or "{}")
+        total = sum(models.values())
+        if not total:
+            return None
+        return sum(n for m, n in models.items() if any(c in m for c in CHEAP_MODELS)), total
+
+    def ratio(num: str, den: str):
+        return lambda r: (r[num], r[den]) if r[den] else None
+
+    def carried(column: str):
+        return lambda r: (r[column], r["carried_all"]) if r["carried_all"] else None
+
+    getters = {
+        "tokens_per_call": ratio("processed", "calls"),
+        "context_per_call_p50": lambda r: r["context_p50"],
+        "context_pre_compact_p50": lambda r: r["pre_compact_p50"],
+        "startup_load_p50": lambda r: r["startup"],
+        "orientation_p50": lambda r: r["orientation"],
+        "large_full_reads_per_1000": lambda r: (1000 * r["large_reads"], r["calls"]) if r["calls"] else None,
+        "share_file_reads": carried("carried_read"),
+        "share_shell_output": carried("carried_shell"),
+        "share_model_output": carried("carried_output"),
+        "share_subagents": ratio("subagent_processed", "processed"),
+        "cheap_model_share_main": lambda r: cheap(r, "models_main"),
+        "cheap_model_share_subagents": lambda r: cheap(r, "models_sub"),
+    }
+    return {key: ([v for r in before if (v := get(r)) is not None], [v for r in after if (v := get(r)) is not None])
+            for key, get in getters.items()}
+
+
+def project_mix(selected: list[sqlite3.Row]) -> dict[str, float]:
+    """Share of calls per project, with the home-folder prefix removed from the names."""
+    calls: Counter = Counter()
+    for r in selected:
+        calls[short_project(r["project"] or "?")] += r["calls"] or 0
+    total = sum(calls.values())
+    return {name: n / total for name, n in calls.items()} if total else {}
+
+
+def project_overlap(before: dict[str, float], after: dict[str, float]) -> float:
+    """0 when the two periods have no project in common, 1 when they cover the same projects in the same proportions."""
+    return sum(min(share, after.get(name, 0.0)) for name, share in before.items())
+
+
 def short_project(name: str) -> str:
     """Project folder name without the home prefix: C--Users-me-Desktop-App -> Desktop-App."""
     prefix = re.sub(r"[^A-Za-z0-9]", "-", str(Path.home())) + "-"
@@ -303,12 +358,12 @@ def short_project(name: str) -> str:
 
 
 def _num(value: float) -> str:
-    return f"{value:,.0f}".replace(",", ".")
+    return decimal(f"{value:,.0f}")
 
 
 def _tokens(value: float) -> str:
     if value >= 1e9:
-        return f"{value / 1e9:.1f}B".replace(".", ",")
+        return decimal(f"{value / 1e9:.1f}") + "B"
     if value >= 1e6:
         return f"{value / 1e6:.0f}M"
     return f"{value / 1e3:.0f}K"
@@ -318,19 +373,22 @@ def render_history(con: sqlite3.Connection, project: str | None = None, weeks: i
     since = time.strftime("%Y-%m-%d", time.localtime(time.time() - weeks * 7 * 86400))
     selected = rows(con, project, since=since)
     every = rows(con, project)
-    title = f"Token geçmişi{f' ({project})' if project else ''}"
+    suffix = f" ({project})" if project else ""
+    title = L("Token history", "Token geçmişi") + suffix
     lines = [title, ""]
     if not every:
-        return "\n".join(lines + ["Kayıt yok. Önce: cc-optimizer history --sync-only"])
+        return "\n".join(lines + [L("No records. First run: cc-optimizer history --sync-only", "Kayıt yok. Önce: cc-optimizer history --sync-only")])
     first = min(r["first_ts"] or "" for r in every)[:10]
-    lines.append(f"Kayıtta {len(every)} oturum var, {first} tarihinden beri. Son {weeks} hafta:")
+    lines.append(L(f"{plural(len(every), 'session')} on record, since {first}. Last {weeks} weeks:",
+                   f"Kayıtta {len(every)} oturum var, {first} tarihinden beri. Son {weeks} hafta:"))
     lines.append("")
 
     weekly: dict[str, list[sqlite3.Row]] = defaultdict(list)
     for r in selected:
         iso = date.fromisoformat((r["first_ts"] or "1970-01-01")[:10]).isocalendar()
-        weekly[f"{iso[0]}-H{iso[1]:02d}"].append(r)
-    header = f"{'Hafta':<10}{'Oturum':>8}{'Çağrı':>9}{'Token':>9}{'Token/çağrı':>13}{'Service001':>12}"
+        weekly[f"{iso[0]}-{L('W', 'H')}{iso[1]:02d}"].append(r)
+    header = (f"{L('Week', 'Hafta'):<10}{L('Sessions', 'Oturum'):>8}{L('Calls', 'Çağrı'):>9}{'Token':>9}"
+              f"{L('Token/call', 'Token/çağrı'):>13}{'Service001':>12}")
     lines += [header]
     for week in sorted(weekly):
         group = weekly[week]
@@ -341,7 +399,8 @@ def render_history(con: sqlite3.Connection, project: str | None = None, weeks: i
                      f"{_tokens(processed / calls if calls else 0):>13}{f'{guarded}/{len(group)}':>12}")
 
     if not project:
-        lines += ["", f"Projeler (son {weeks} hafta):", f"{'Proje':<44}{'Oturum':>8}{'Token':>9}{'Token/çağrı':>13}"]
+        lines += ["", L(f"Projects (last {weeks} weeks):", f"Projeler (son {weeks} hafta):"),
+                  f"{L('Project', 'Proje'):<44}{L('Sessions', 'Oturum'):>8}{'Token':>9}{L('Token/call', 'Token/çağrı'):>13}"]
         by_project: dict[str, list[sqlite3.Row]] = defaultdict(list)
         for r in selected:
             by_project[r["project"]].append(r)
@@ -351,7 +410,9 @@ def render_history(con: sqlite3.Connection, project: str | None = None, weeks: i
             short = short_project(name)[:42]
             lines.append(f"{short:<44}{len(group):>8}{_tokens(processed):>9}{_tokens(processed / calls if calls else 0):>13}")
     mixed = sum(r["guarded"] == MIXED for r in selected)
-    lines += ["", "Service001 sütunu: o haftaki oturumlardan kaçında koruyucuların baştan devrede olduğu."]
+    lines += ["", L("Service001 column: in how many of that week's sessions the guards were active from the start.",
+          "Service001 sütunu: o haftaki oturumlardan kaçında koruyucuların baştan devrede olduğu.")]
     if mixed:
-        lines.append(f"{mixed} oturumda koruyucular oturumun ortasında kurulmuş. Bunlar karşılaştırmaya alınmaz.")
+        lines.append(L(f"In {plural(mixed, 'session')} the guards were installed mid-session. These are left out of the comparison.",
+                       f"{mixed} oturumda koruyucular oturumun ortasında kurulmuş. Bunlar karşılaştırmaya alınmaz."))
     return "\n".join(lines)

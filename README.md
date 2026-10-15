@@ -1,9 +1,11 @@
 # Service001
 
-Claude Code token tüketimini ölçen ve azaltan araç seti.
-Ürün vizyonu, ölçüm bulguları ve fazlar için [ROADMAP.md](ROADMAP.md) dosyasına bakın.
+English | [Türkçe](README.tr.md)
 
-## Kurulum
+A toolkit that measures and reduces Claude Code token consumption.
+See [ROADMAP.md](ROADMAP.md) for the product vision, measurement findings and phases.
+
+## Installation
 
 ```bash
 python -m venv .venv
@@ -11,84 +13,84 @@ python -m venv .venv
 # .venv/bin/python -m pip install -e ".[dev]"     # Linux / macOS
 ```
 
-## Claude Code token analizi
+## Claude Code token analysis
 
-Claude Code her oturumu `~/.claude/projects` altında kaydeder.
-Analiz bu kayıtları yerelde okur, hiçbir şeyi dışarı göndermez ve kayıtları değiştirmez.
+Claude Code records every session under `~/.claude/projects`.
+The analysis reads these records locally, sends nothing out and does not modify the records.
 
 ```bash
-.venv/Scripts/cc-optimizer analyze                  # tüm projeler
-.venv/Scripts/cc-optimizer analyze --project .      # yalnızca bulunduğunuz klasörün projesi
-.venv/Scripts/cc-optimizer analyze --days 7         # son 7 günde aktif oturumlar
-.venv/Scripts/cc-optimizer analyze --session 3a54   # tek oturum, kimliğin başıyla
-.venv/Scripts/cc-optimizer analyze --json           # makine okunur çıktı
+.venv/Scripts/cc-optimizer analyze                  # all projects
+.venv/Scripts/cc-optimizer analyze --project .      # only the project of the current folder
+.venv/Scripts/cc-optimizer analyze --days 7         # sessions active in the last 7 days
+.venv/Scripts/cc-optimizer analyze --session 3a54   # a single session, by the start of its ID
+.venv/Scripts/cc-optimizer analyze --json           # machine-readable output
 ```
 
-Rapor bölümleri:
+Report sections:
 
-1. **Token tüketimi:** Cache okuma, cache yazma, girdi ve çıktı, model bazında.
-2. **Bağlam büyüklüğü:** Çağrı başına bağlam, açılıştaki sabit yük, sıkıştırmalar ve daha erken sıkıştırma senaryosu.
-3. **Bağlamı ne dolduruyor:** Her kaynağın boyutu ve kaç çağrı boyunca taşındığı. Modelin yazdığı içeriğin kırılımı.
-4. **En pahalı araç çıktıları:** Bağlama en çok yük bindiren tek tek okumalar ve komutlar.
-5. **Kabuk komutları:** Program ve alt komut bazında çıktı yükü.
-6. **Dosya okumaları:** Gereksiz tekrar okumalar, sınırsız büyük okumalar, en çok okunan dosyalar.
-7. **En çok tüketen oturumlar.**
+1. **Token consumption:** Cache reads, cache writes, input and output, per model.
+2. **Context size:** Context per call, the fixed load at startup, compactions and an earlier-compaction scenario.
+3. **What fills the context:** The size of each source and for how many calls it was carried. A breakdown of the content the model wrote.
+4. **Most expensive tool outputs:** The individual reads and commands that put the most load on the context.
+5. **Shell commands:** Output load by program and subcommand.
+6. **File reads:** Unnecessary repeat reads, unbounded large reads, the most-read files.
+7. **Most consuming sessions.**
 
-### Ölçümün sınırları
+### Limits of the measurement
 
-- Model çağrılarının token sayıları kayıttaki gerçek değerlerdir.
-- Kaynak bazındaki boyutlar `o200k_base` ile tahmin edilir. Sonra gerçek bağlam büyümesine göre kalibre edilir. Rapor, gerçek tüketimin ne kadarını açıklayabildiğini gösterir.
-- Görseller sabit 1.500 token sayılır.
-- Düşünme token'larının sonraki çağrılarda bağlamda kalmadığı varsayılır.
-- Sıkıştırma senaryosu kaba bir tahmindir. Sıkıştırmadan sonra işin aynı şekilde ilerleyeceğini varsayar.
-- Kayıt formatı Claude Code'un iç formatıdır ve sürümle değişebilir.
+- Token counts of model calls are the actual values from the record.
+- Sizes per source are estimated with `o200k_base`, then calibrated against the actual context growth. The report shows how much of the actual consumption it can explain.
+- Images are counted as a fixed 1,500 tokens.
+- Thinking tokens are assumed not to stay in the context in later calls.
+- The compaction scenario is a rough estimate. It assumes that after compaction the work would proceed in the same way.
+- The record format is Claude Code's internal format and may change between versions.
 
-## Bağlam koruyucuları
+## Context guards
 
-Claude Code hook'ları ile çalışan, bağlamı şişiren davranışları yakalayan koruyucular.
-İzin vermez, yalnızca Claude'a ve size bilgi verir. Tek istisna büyük okumalardır: orada bir kez reddetmek token kazandırır.
+Guards that run through Claude Code hooks and catch behaviors that bloat the context.
+They do not block anything; they only inform Claude and you. The one exception is large reads: there, refusing once saves tokens.
 
-| Koruyucu | Ne zaman | Ne yapar |
+| Guard | When | What it does |
 |---|---|---|
-| Oturum kuralları | Oturum başı, `/clear` ve sıkıştırma sonrası | Claude'a üç satırlık token kuralı ekler |
-| Bağlam uyarısı | Bağlam 300 bin token'ı aşınca, sonra her 100 binde bir | Size `/compact` veya `/clear` önerir, Claude'a işi odaklı tutmasını söyler |
-| Baştan yazma uyarısı | Var olan büyük bir dosya Write ile içeriğinin çoğu aynı kalarak yeniden yazılınca | Claude'a sonraki değişikliklerde yalnızca değişen satırları düzenlemesini söyler |
-| Heredoc uyarısı | Aynı durum `cat > dosya <<EOF` ile yapılınca | Aynı uyarı |
-| Büyük okuma | Yaklaşık 6 bin token'dan büyük bir dosya aralık verilmeden okunmak istenince | Bir kez reddeder, dosyanın satır numaralı taslağını verir ve Grep ile yer bulup aralık okumasını söyler. Claude aynı okumayı tekrarlarsa o oturumda o dosya için izin verilir |
-| Kabukta dosya basma | `cat a.tsx b.tsx` veya `Get-Content` ile toplamı eşiği aşan dosyalar tam basılmak istenince | Büyük okumadaki gibi bir kez reddeder. Aralıklı basmalara (`sed -n`, `head`), başka komuta aktarılan ve dosyaya yönlendirilen çıktılara dokunmaz |
-| Durum satırı | Her zaman | Model, bağlam büyüklüğü ve oturum maliyeti, eşiğe göre renkli |
+| Session rules | At session start, after `/clear` and after compaction | Adds a three-line token rule to Claude |
+| Context warning | When the context exceeds 300 thousand tokens, then every 100 thousand | Suggests `/compact` or `/clear` to you, tells Claude to keep the work focused |
+| Rewrite warning | When an existing large file is rewritten with Write while most of its content stays the same | Tells Claude to edit only the changed lines in later changes |
+| Heredoc warning | The same situation done with `cat > file <<EOF` | The same warning |
+| Large read | When a file larger than about 6 thousand tokens is read without a range | Refuses once, gives a line-numbered outline of the file and tells Claude to find the spot with Grep and read a range. If Claude repeats the same read, that file is allowed for the rest of that session |
+| Dumping files in the shell | When files whose total exceeds the threshold are dumped in full with `cat a.tsx b.tsx` or `Get-Content` | Refuses once, like the large read. Does not touch ranged dumps (`sed -n`, `head`), or output piped to another command or redirected to a file |
+| Status line | Always | Model, context size and session cost, colored by threshold |
 
-Kurulum ve kaldırma:
+Install and uninstall:
 
 ```bash
-.venv/Scripts/cc-optimizer install --scope local --statusline        # yalnızca bu proje
-.venv/Scripts/cc-optimizer install --scope user --statusline         # tüm projeler
-.venv/Scripts/cc-optimizer install --scope user --compact-window 400000   # sıkıştırma eşiği de
-.venv/Scripts/cc-optimizer install --scope user --bash-output-max 12000   # uzun kabuk çıktısı dosyaya
-.venv/Scripts/cc-optimizer install --scope user --dry-run            # yazmadan önce göster
-.venv/Scripts/cc-optimizer uninstall --scope user                    # her şeyi eski haline getirir
+.venv/Scripts/cc-optimizer install --scope local --statusline        # this project only
+.venv/Scripts/cc-optimizer install --scope user --statusline         # all projects
+.venv/Scripts/cc-optimizer install --scope user --compact-window 400000   # also the compaction threshold
+.venv/Scripts/cc-optimizer install --scope user --bash-output-max 12000   # long shell output goes to a file
+.venv/Scripts/cc-optimizer install --scope user --dry-run            # show before writing
+.venv/Scripts/cc-optimizer uninstall --scope user                    # restores everything
 ```
 
-Kurulum mevcut ayarları korur, önce yedek alır ve kaldırıldığında değiştirdiği değerleri geri yükler.
+The installation preserves existing settings, takes a backup first and restores the values it changed when uninstalled.
 
-Koruyucular hata verdiğinde Claude Code'u bozmamak için sessizce devre dışı kalır. Bu yüzden ara sıra kontrol edin:
+When the guards hit an error, they silently disable themselves so they do not break Claude Code. That is why you should check occasionally:
 
 ```bash
 .venv/Scripts/cc-optimizer doctor
 ```
 
-Kontrol ettikleri:
-- Hook'lar kurulu ve güncel mi.
-- Python yolu geçerli mi. Hook ve durum satırı gerçekten çalıştırılıp süreleri ölçülür.
-- Koruyucular Claude Code kullanılırken gerçekten çalışmış mı. Her hook çalıştığında `~/.claude/cc-optimizer/heartbeat/` altına zaman bırakır.
-- `config.json` geçerli mi.
-- Alt ajanlar güncel mi.
-- Bu projede ikinci bir kurulum var mı.
-- Proje haritası yerinde mi.
+What it checks:
+- Whether the hooks are installed and up to date.
+- Whether the Python path is valid. The hooks and the status line are actually run and their durations measured.
+- Whether the guards have really run while Claude Code was in use. Each time a hook runs, it leaves a timestamp under `~/.claude/cc-optimizer/heartbeat/`.
+- Whether `config.json` is valid.
+- Whether the subagents are up to date.
+- Whether there is a second installation in this project.
+- Whether the project map is in place.
 
-Sorun varsa nasıl düzeltileceğini yazar ve hata durumunda 1 ile çıkar.
+If there is a problem, it explains how to fix it and exits with 1 on failure.
 
-Ayarlar `~/.claude/cc-optimizer/config.json` dosyasından değiştirilebilir:
+Settings can be changed in `~/.claude/cc-optimizer/config.json`:
 
 ```json
 {
@@ -104,133 +106,173 @@ Ayarlar `~/.claude/cc-optimizer/config.json` dosyasından değiştirilebilir:
 }
 ```
 
-`write_guard` için `"block"` seçilirse baştan yazma bir kez reddedilir. Claude aynı yazmayı tekrar denerse izin verilir.
-Bu mod varsayılan değildir, çünkü reddedilen içerik zaten üretilmiş ve bağlama girmiş olur.
+If `"block"` is chosen for `write_guard`, a rewrite is refused once. If Claude tries the same write again, it is allowed.
+This mode is not the default, because the refused content has already been generated and has entered the context.
 
-`read_guard` için durum tersidir. Okuma reddedildiğinde dosya henüz bağlama girmemiştir.
-İlk ölçümde 6 bin token'ı aşan 71 sınırsız okuma, sonraki çağrılarda toplam 223 milyon token taşıdı.
-Reddetmenin getirdiği fazladan çağrılar 22 milyon token tuttu.
-`"coach"` yalnızca uyarır, `"off"` kapatır. Aynı ayar kabukta dosya basmayı da yönetir.
+For `read_guard` the situation is the reverse. When a read is refused, the file has not entered the context yet.
+In the first measurement, 71 unbounded reads over 6 thousand tokens carried a total of 223 million tokens in later calls.
+The extra calls caused by refusing cost 22 million tokens.
+`"coach"` only warns, `"off"` disables it. The same setting also controls dumping files in the shell.
 
-Uzun kabuk çıktıları için ayrı bir koruyucu yok, çünkü Claude Code bunu kendisi yapıyor.
-`bashOutputMaxChars` aşılınca çıktı bir dosyaya yazılır ve Claude yalnızca önizleme ile dosya yolunu görür.
-Varsayılan sınır yaklaşık 30 bin karakterdir. `--bash-output-max` bunu düşürür ve kaldırınca eski haline getirir.
+There is no separate guard for long shell output, because Claude Code does this itself.
+When `bashOutputMaxChars` is exceeded, the output is written to a file and Claude sees only a preview and the file path.
+The default limit is about 30 thousand characters. `--bash-output-max` lowers it and restores the old value when removed.
 
-Koruyucuların etkisini ölçmek için:
-
-```bash
-.venv/Scripts/cc-optimizer events --days 7      # koruyucular ne yaptı
-.venv/Scripts/cc-optimizer compare              # başlangıç ölçümüyle önce / sonra karşılaştırması
-```
-
-`compare`, `data/` içindeki en yeni başlangıç ölçümünü, ondan sonra başlayan oturumlarla karşılaştırır.
-İki dönemdeki işler farklı olduğu için toplamları değil, çağrı başına değerleri, medyanları ve payları karşılaştırır.
-Asıl ölçüt çağrı başına işlenen token'dır. Sonraki dönemde 5 oturum veya 1.000 çağrıdan az veri varsa uyarı verir.
-
-## Çalışma günlüğü (proje hafızası)
-
-Yeni bir sohbette veya bağlam sıkıştırıldıktan sonra Claude önceki işleri bilmez.
-Service001 her proje için `.claude/worklog.md` dosyasında bir çalışma günlüğü tutar. Her oturum için şunları kaydeder:
-- İstekleriniz.
-- Değişen proje dosyaları ve her birinin kaç kez düzenlendiği.
-- Çalışan komutlar. Okuma komutları hariç.
-- Claude'un son cevabı.
-
-Kayıtlar oturum kayıtlarından kural tabanlı olarak çıkarılır, yani ek token harcanmaz.
-Yapıştırılmış içerikler, IDE notları ve proje dışındaki dosyalar ayıklanır. En yeni 40 oturum tutulur.
-
-Bağlama ne girer:
-
-| Ne zaman | Bağlama giren |
-|---|---|
-| Yeni sohbet | Günlüğün yolu ve son 3 oturumun tek satırlık özeti (tarih, başlık, değişen dosyalar), yaklaşık 150 token |
-| Bağlam sıkıştırıldıktan sonra | Aynısı, ve bu oturumda sıkıştırmaya kadar yapılanların tek satırlık özeti |
-
-Claude önceki bir işe devam ederken günlükteki ilgili kaydı okur.
-Önceki oturum yeni oturum açılırken hemen günlüğe işlenir. Diğerleri arka plan senkronizasyonunda işlenir.
-Günlük, harita gibi yalnızca bu bilgisayardaki `.git/info/exclude` ile git dışında tutulur.
-`config.json` içinde `"worklog": false` ile kapatılır, `"worklog_recent"` bağlama girecek oturum sayısını belirler.
-
-Claude Code'un kendi hafızası (CLAUDE.md ve otomatik hafıza) kararları ve kuralları tutar. Çalışma günlüğü ise ne yapıldığını tutar. İkisi birbirini tamamlar.
-
-## Token geçmişi
-
-Claude Code oturum kayıtlarını yaklaşık 30 gün sonra siler. Service001 her oturumun yalnızca sayılarını kalıcı olarak saklar.
-Saklanan sayılar: proje, tarih, çağrı, işlenen token, bağlam medyanı, model dağılımı, keşif yükü, okuma ve kabuk payları.
-Kayıt `~/.claude/cc-optimizer/history.db` dosyasındadır ve içerik saklanmaz.
-
-Kayıt, oturum başında arka planda en fazla saatte bir güncellenir. Yalnızca yeni ve değişen oturumlar işlenir.
-Kayıtları silinen oturumlar geçmişte kalır.
-
-Her oturum kendi kaydına bakılarak etiketlenir:
-
-| Etiket | Ne demek |
-|---|---|
-| Service001'li | Koruyucuların eklediği metin ilk model çağrısından önce var |
-| Karışık | Koruyucular oturumun ortasında kurulmuş. Karşılaştırmaya alınmaz |
-| Service001'siz | Koruyucuların izi yok |
+To measure the effect of the guards:
 
 ```bash
-.venv/Scripts/cc-optimizer history                     # hafta ve proje bazında token geçmişi
-.venv/Scripts/cc-optimizer history --project KEIMORA   # tek proje
-.venv/Scripts/cc-optimizer compare --project KEIMORA   # KEIMORA'da Service001'siz ve Service001'li oturumlar
-.venv/Scripts/cc-optimizer compare                     # tüm projeler
+.venv/Scripts/cc-optimizer events --days 7      # what the guards did
+.venv/Scripts/cc-optimizer compare              # before / after comparison against the baseline measurement
 ```
 
-`compare` artık varsayılan olarak bu geçmişi kullanır. Eski dosya tabanlı karşılaştırma için `--baseline data/baseline-2026-10-14-v2.json` verilir.
+`compare` compares the newest baseline measurement in `data/` with the sessions that started after it.
+Because the work in the two periods differs, it compares per-call values, medians and shares, not totals.
+The main metric is tokens processed per call. It warns if the later period has fewer than 5 sessions or 1,000 calls.
 
-## Proje haritası
+## Work log (project memory)
 
-Her oturum başında, açılan klasör bir projeyse `.claude/project-map.md` dosyası üretilir veya güncellenir.
-Klasörün proje sayılması için içinde git, `package.json`, `pyproject.toml` gibi bir işaret olmalı.
+In a new chat or after the context is compacted, Claude does not know the earlier work.
+Service001 keeps a work log for each project in `.claude/worklog.md`. For each session it records:
+- Your requests.
+- The project files that changed and how many times each was edited.
+- The commands that ran. Read commands excluded.
+- Claude's final answer.
 
-| İçerik | Nereden |
+Entries are extracted from the session records by rules, so no extra tokens are spent.
+Pasted content, IDE notes and files outside the project are filtered out. The newest 40 sessions are kept.
+
+What enters the context:
+
+| When | What enters the context |
 |---|---|
-| Proje özeti | README'nin ilk paragrafı |
-| Çalıştırma komutları | `package.json` scriptleri, `pyproject.toml` |
-| Klasör yapısı | Git deposunda `git ls-files`, değilse klasör taraması. `node_modules`, `dist` gibi klasörler atlanır |
-| Dosya açıklamaları | 150 dosyaya kadar projelerde her dosyanın baş yorumundan tek satır. Büyük projelerde klasörler dosya sayılarıyla |
+| New chat | The path of the log and a one-line summary of the last 3 sessions (date, title, changed files), about 150 tokens |
+| After the context is compacted | The same, plus a one-line summary of what was done in this session up to the compaction |
 
-Haritanın kendisi bağlama eklenmez, yalnızca yolu eklenir. Bağlama eklenen her şey her çağrıda yeniden okunur. Dosya ise gerektiğinde bir kez okunur.
-Harita yoksa, 6 saatten eskiyse veya git'te yeni commit varsa yeniden üretilir.
-Git'e girmemesi için yalnızca bu bilgisayardaki `.git/info/exclude` dosyasına eklenir. Paylaşılan `.gitignore` değişmez.
+When Claude continues an earlier piece of work, it reads the relevant entry in the log.
+The previous session is written to the log immediately when a new session opens. The others are processed in the background sync.
+Like the map, the log is kept out of git through `.git/info/exclude`, on this computer only.
+It is turned off with `"worklog": false` in `config.json`, and `"worklog_recent"` sets the number of sessions that enter the context.
+
+Claude Code's own memory (CLAUDE.md and automatic memory) holds decisions and rules. The work log holds what was done. The two complement each other.
+
+## Token history
+
+Claude Code deletes session records after about 30 days. Service001 permanently stores only the numbers of each session.
+Stored numbers: project, date, calls, tokens processed, context median, model distribution, exploration load, read and shell shares.
+The record is in `~/.claude/cc-optimizer/history.db` and no content is stored.
+
+The record is updated in the background at session start, at most once an hour. Only new and changed sessions are processed.
+Sessions whose records have been deleted stay in the history.
+
+Each session is labeled by looking at its own record:
+
+| Label | Meaning |
+|---|---|
+| With Service001 | The text added by the guards is present before the first model call |
+| Mixed | The guards were installed in the middle of the session. Not included in comparison |
+| Without Service001 | No trace of the guards |
 
 ```bash
-.venv/Scripts/cc-optimizer map            # bu klasörün haritasını şimdi üret
-.venv/Scripts/cc-optimizer map --print    # yazmadan göster
+.venv/Scripts/cc-optimizer history                     # token history by week and project
+.venv/Scripts/cc-optimizer history --project KEIMORA   # a single project
+.venv/Scripts/cc-optimizer compare --project KEIMORA   # sessions without and with Service001 in KEIMORA
+.venv/Scripts/cc-optimizer compare                     # all projects
+.venv/Scripts/cc-optimizer compare --matched           # only projects that have sessions on both sides
+.venv/Scripts/cc-optimizer compare --markdown          # a Markdown table for a pull request or a team update
 ```
 
-`config.json` içinde `"project_map": false` ile kapatılır.
-`compare` çıktısındaki "İlk değişiklikten önceki keşif" satırı etkisini ölçer. Başlangıçta medyan yaklaşık 10,6 bin token.
+`compare` now uses this history by default. For the old file-based comparison, pass `--baseline data/baseline-2026-10-14-v2.json`.
 
-## Model yönlendirme
+How to read the report:
 
-Claude Code, hook'ların ana sohbetin modelini değiştirmesine izin vermiyor.
-Konuşmanın ortasında model değiştirmek de pahalı, çünkü her modelin önbelleği ayrı ve konuşmanın tamamı yeniden işleniyor.
-Bu yüzden yönlendirme iki noktada yapılır.
+- **Confidence.** Every row is checked against the session-to-session noise (a bootstrap over sessions, 90% interval, fixed seed). A change that cannot be told apart from noise is shown as `unclear`, not as better or worse. With fewer than 3 sessions on a side nothing can be said. The interval is printed next to the change.
+- **Different projects.** If the two periods mostly cover different projects (overlap under 50%), the report warns that the difference may come from the work. `--matched` keeps only projects present on both sides; `--project NAME` looks at one.
+- **What the guards kept out.** The report adds the tokens that blocking guards kept out of the context at the first attempt, taken from the event log. It is an upper bound, because a blocked read can be retried in smaller parts.
+- `compare --json` contains the same data (`confidence`, `interval` per row, `projects`, `guard_effect`).
 
-| Parça | Ne yapar |
+## Project map
+
+At the start of every session, if the opened folder is a project, `.claude/project-map.md` is generated or updated.
+For a folder to count as a project, it must contain a marker such as git, `package.json` or `pyproject.toml`.
+
+| Content | Source |
 |---|---|
-| Varsayılan model | Yeni sohbetler Sonnet ile başlar (`--model sonnet`). Bütün bir oturum zor olacaksa `/model opus` kullanılır. Kaldırınca önceki model geri gelir |
-| Alt ajanlar | Aşağı: `scout` (Haiku) arama ve okuma, `worker` (Sonnet) net tanımlı kodlama. Yukarı: `architect` (Opus) mimari, zor hata ayıklama ve riskli çok dosyalı değişiklik, `expert` (Fable) en zor problemler. Alt ajan sıfırdan başladığı için önbellek kaybı olmaz |
-| Oturum başı kuralları | Claude'a hangi işi hangi ajana vereceğini söyler. Yalnızca ajanlar kuruluysa eklenir |
-| Keşif hatırlatması | Ana sohbet art arda 4 arama veya okuma yaptıktan sonraki çağrıda, keşfe devam edecekse scout'a (Haiku) devretmesini söyler. Keşfin çıktıları sohbette birikmez, yalnızca kısa rapor gelir. Her keşif dizisinde bir kez yapılır. Claude 3 hatırlatmayı uygulamazsa o oturumda durur. Alt ajanların kendi çağrılarına uygulanmaz. Eşik `routing_nudge_after` ayarıyla değişir |
-| Varsayılan alt ajan modeli | Model belirtmeyen alt ajanlar Opus yerine bu modelle çalışır |
-| İlk promptta model önerisi | Oturumun ilk promptunda, iş basitse Claude size `/model haiku` veya `/model sonnet` önerir. Geçişin ucuz olduğu tek an budur |
+| Project summary | The first paragraph of the README |
+| Run commands | `package.json` scripts, `pyproject.toml` |
+| Folder structure | `git ls-files` in a git repository, otherwise a folder scan. Folders such as `node_modules` and `dist` are skipped |
+| File descriptions | For projects up to 150 files, one line from the header comment of each file. For large projects, folders with their file counts |
+| Pages and routes | The answer to "which file is this page in": route, file, component and what the page uses. Pages of Next, SvelteKit, Nuxt, Astro, React Router, Angular, Vue Router, Razor/MVC and Blazor. For APIs: Express, NestJS, Flask, FastAPI, Django, Spring, ASP.NET, Laravel, Go, Rails |
+| Search index | `.claude/project-index.md`: `name  file:line  kind` for every route, page and top-level symbol. Claude finds things with a single `grep` |
+| Dependencies and hubs | Which files each file imports and which import it (JS/TS with tsconfig `paths`, Vue, Svelte, Python, Java, Kotlin, Go, C#), and the files and symbols the most code depends on. Answers "what is affected if I change this" |
+
+The map itself is not added to the context, only its path. Everything added to the context is re-read on every call. A file, on the other hand, is read once when needed.
+It is regenerated if there is no map, if it is older than 6 hours, if there is a new commit in git, or if files were added or deleted.
+Detection is done with regular expressions and is not a parser: if it misses something, Claude does a normal search. Nested routes are not merged with their parent route.
+Dependencies come from static imports. Go, C#, Java and Kotlin connect files through packages and namespaces, so there a file is linked to another when it mentions a type (or an exported Go function) that is defined in one place within a scope it can see; Rust, PHP and Ruby have no dependency edges yet. Dynamic imports and reflection are not seen. Symbol references are counted by name: a name that is defined in several files or is very generic is not counted.
+So that it does not enter git, it is added only to `.git/info/exclude` on this computer. The shared `.gitignore` is unchanged.
+
+```bash
+.venv/Scripts/cc-optimizer map            # generate this folder's map now
+.venv/Scripts/cc-optimizer map --print    # show without writing
+cc-optimizer impact src/lib/api.ts       # files affected by a change (name alone works when unique)
+cc-optimizer map --graph > graph.json    # files, imports, importers, symbols, routes as plain JSON
+```
+
+**In a session that is already open.** The map is normally created when a session starts. For a session that was open before the guards were installed, there are two ways in, no restart needed:
+
+- The first prompt after the hooks become active announces the map once (the hook creates it if it is missing). If the hooks were installed while the session was open, open Claude Code's `/hooks` menu once so the session reloads them.
+- The `/project-map` command (added by `install`) refreshes the map and the index on demand and tells Claude to use them. It asks Claude to run `cc-optimizer map --announce`, which you can also run yourself in a terminal.
+
+Only paths and usage hints enter the context, never the map itself.
+
+It is turned off with `"project_map": false` in `config.json`.
+
+For project-specific settings you can write `.claude/cc-optimizer.json` (it can be committed and shared with the team):
+
+```json
+{
+  "ignore": ["legacy/**", "*.generated.ts"],
+  "routes": [
+    {"files": "src/**/*.ts", "kind": "page", "regex": "registerPage\\('(?P<path>[^']+)', '(?P<name>\\w+)'"}
+  ]
+}
+```
+
+`ignore` removes files from the map. `routes` adds your own route pattern: the `path` group is required in the regex, `method` and `name` are optional. When a file changes, the map is refreshed.
+
+## Language
+
+Output is supported in English and Turkish. Selection order: the `CC_OPTIMIZER_LANG` environment variable (`en` or `tr`), `"language": "en" | "tr" | "auto"` in `config.json`, the system language (Turkish if the system is Turkish), otherwise English. Text sent to Claude is always in English.
+The "Exploration before the first edit, median" line in the `compare` output measures its effect. At baseline the median is about 10.6 thousand tokens.
+
+## Model routing
+
+Claude Code does not let hooks change the model of the main chat.
+Switching the model in the middle of a conversation is also expensive, because each model has its own cache and the whole conversation is reprocessed.
+That is why routing is done at two points.
+
+| Part | What it does |
+|---|---|
+| Default model | New chats start with Sonnet (`--model sonnet`). If a whole session will be hard, `/model opus` is used. When removed, the previous model comes back |
+| Subagents | Down: `scout` (Haiku) for search and reading, `worker` (Sonnet) for clearly defined coding. Up: `architect` (Opus) for architecture, hard debugging and risky multi-file changes, `expert` (Fable) for the hardest problems. Because a subagent starts from scratch, no cache is lost |
+| Session-start rules | Tell Claude which work to give to which agent. Added only if the agents are installed |
+| Exploration reminder | In the call after the main chat has made 4 searches or reads in a row, if it will continue exploring, it tells Claude to delegate to scout (Haiku). The outputs of the exploration do not pile up in the chat; only a short report comes back. Done once per exploration sequence. If Claude ignores 3 reminders, it stops for that session. Not applied to the subagents' own calls. The threshold is changed with the `routing_nudge_after` setting |
+| Default subagent model | Subagents that do not specify a model run with this model instead of Opus |
+| Model suggestion in the first prompt | In the session's first prompt, if the work is simple, Claude suggests `/model haiku` or `/model sonnet` to you. This is the only moment when switching is cheap |
 
 ```bash
 .venv/Scripts/cc-optimizer install --scope user --agents --subagent-model sonnet
 ```
 
-İlk ölçümde tüketimin %95'i ana sohbetteydi ve alt ajanların 83 çağrısından 78'i Opus'u miras alıyordu.
-En büyük etki, oturumu işe uygun modelle başlatmaktan gelir.
-`model_routing` ve `model_advice` ayarları `config.json` içinden kapatılabilir.
+In the first measurement, 95% of consumption was in the main chat, and 78 of the subagents' 83 calls inherited Opus.
+The biggest effect comes from starting the session with the model that suits the work.
+The `model_routing` and `model_advice` settings can be turned off in `config.json`.
 
-## Beklemede: LLM API gateway
+## On hold: LLM API gateway
 
-`src/llm_gateway`, kendi uygulamalarında LLM API'si kullanan kurumlar için yazılmış ölçüm proxy'sidir.
-OpenAI ve Anthropic uyumlu istekleri olduğu gibi iletir ve token, maliyet ve gecikme kaydeder.
-Şu anki öncelik değildir.
+`src/llm_gateway` is a measurement proxy written for organizations that use an LLM API in their own applications.
+It forwards OpenAI- and Anthropic-compatible requests as they are and records tokens, cost and latency.
+It is not the current priority.
 
 ```bash
 cp config.example.yaml config.yaml
@@ -238,33 +280,35 @@ cp config.example.yaml config.yaml
 .venv/Scripts/llm-gateway report --days 7
 ```
 
-Sağlayıcı anahtarları `.env` dosyasından okunur. Bu dosya ve `config.yaml` git'e girmez.
+Provider keys are read from the `.env` file. This file and `config.yaml` do not go into git.
 
-## Test
+## Tests
 
 ```bash
 .venv/Scripts/python -m pytest -q
 ```
 
-## Yapı
+## Structure
 
 ```
 src/cc_optimizer/
-  transcripts.py  oturum kayıtlarını ayrıştırma
-  analyze.py      kaynak, taşınan yük, kalibrasyon, senaryo
-  report.py       Türkçe rapor
-  compare.py      önce / sonra karşılaştırması
-  hooks.py        bağlam koruyucuları (hook işleyicileri)
-  statusline.py   durum satırı
-  installer.py    ayar dosyasına kurma ve kaldırma
-  guard_config.py koruyucu ayarları, oturum durumu, olay günlüğü
-  shell_reads.py  kabuk komutlarında tam dosya basmayı bulma
-  project_map.py  proje haritası
-  doctor.py       sağlık kontrolü
-  history.py      kalıcı token geçmişi
-  worklog.py      proje çalışma günlüğü
-  agents/         scout, worker, expert alt ajan tanımları
-  cli.py          komut satırı
-src/llm_gateway/  beklemedeki API gateway
+  transcripts.py  parsing session records
+  analyze.py      sources, carried load, calibration, scenario
+  report.py       text report (English / Turkish)
+  compare.py      before / after comparison
+  hooks.py        context guards (hook handlers)
+  statusline.py   status line
+  installer.py    installing into and removing from the settings file
+  guard_config.py guard settings, session state, event log
+  shell_reads.py  detecting full file dumps in shell commands
+  project_map.py  project map
+  code_index.py   page, route and symbol detection
+  i18n.py         English / Turkish text selection
+  doctor.py       health check
+  history.py      persistent token history
+  worklog.py      project work log
+  agents/         scout, worker, expert subagent definitions
+  cli.py          command line
+src/llm_gateway/  the on-hold API gateway
 tests/
 ```

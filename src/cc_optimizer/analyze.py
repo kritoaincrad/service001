@@ -206,7 +206,7 @@ def analyze(
             if estimate:
                 for kind, n in call.visible_parts.items():
                     share = visible * n / estimate
-                    agg = output_parts["Metin" if kind == "text" else f"{kind} çağrısı"]
+                    agg = output_parts[kind]  # raw kind: the report data is language-independent, labels are added when rendering
                     agg.count += 1
                     agg.tokens += share
                     agg.carried += share * carried_calls

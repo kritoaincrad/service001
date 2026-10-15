@@ -87,7 +87,8 @@ def test_history_and_compare_commands(tmp_path, capsys):
     assert "Service001'li 0" in capsys.readouterr().out
 
 
-def test_background_sync_is_throttled(monkeypatch):
+def test_background_sync_is_throttled(monkeypatch, tmp_path):
+    monkeypatch.setenv("CC_OPTIMIZER_HOME", str(tmp_path))  # never read or touch the real sync stamp
     started = []
     monkeypatch.setattr(history.subprocess, "Popen", lambda cmd, **kw: started.append(cmd))
     assert maybe_sync_in_background() is True
@@ -105,3 +106,33 @@ def test_guards_installed_mid_session_are_mixed(tmp_path):
     assert history.guard_label(mixed) == history.MIXED
     assert history.guard_label(plain) == history.UNGUARDED
     assert history.guard_label(guarded) == history.GUARDED
+
+
+def test_background_sync_tolerates_a_file_clock_ahead_of_time(monkeypatch, tmp_path):
+    """On Windows a freshly touched file can carry a time slightly after time.time()."""
+    import os
+    import time
+
+    monkeypatch.setenv("CC_OPTIMIZER_HOME", str(tmp_path))
+    started = []
+    monkeypatch.setattr(history.subprocess, "Popen", lambda cmd, **kw: started.append(cmd))
+    stamp = tmp_path / "history.sync"
+    stamp.write_text("", encoding="utf-8")
+    future = time.time() + 2
+    os.utime(stamp, (future, future))
+    assert maybe_sync_in_background() is False  # still fresh, not mistaken for old
+    assert maybe_sync_in_background(interval=0) is True  # interval 0 always syncs
+    assert len(started) == 1
+
+
+def test_a_late_map_announcement_marks_the_session_as_mixed(tmp_path):
+    """A session that was already open when the guards were installed gets the map announced at its first prompt."""
+    from pathlib import Path
+
+    from cc_optimizer.hooks import map_guidance
+
+    announcement = {"type": "attachment", "attachment": {
+        "type": "hook_additional_context", "content": [map_guidance(Path("C:/proj/.claude/project-map.md"))]}}
+    entries = sample_session()
+    mixed = write_jsonl(tmp_path / "late.jsonl", entries[:4] + [announcement] + entries[4:])
+    assert history.guard_label(mixed) == history.MIXED

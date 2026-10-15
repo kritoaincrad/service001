@@ -23,6 +23,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterator
 
+from .i18n import L
+
 log = logging.getLogger(__name__)
 
 # Rough token cost of one image. Real cost depends on resolution.
@@ -229,7 +231,7 @@ def command_group(command: str) -> str:
                     continue
                 return f"{prog} {_basename(t)}"
         return prog
-    return "cd" if command.strip().startswith("cd") else "(boş)"
+    return "cd" if command.strip().startswith("cd") else L("(empty)", "(boş)")
 
 
 def _attachment_text(obj: Any, texts: list[str]) -> int:

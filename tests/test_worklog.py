@@ -112,3 +112,17 @@ def test_session_start_adds_the_log(setup, monkeypatch):
     assert "Recent sessions:" in text and "Navbar colors" in text and "Login fix" in text
     off = hooks.session_start({"cwd": str(project), "session_id": "new"}, {**cfg, "worklog": False})
     assert "Recent sessions" not in off["hookSpecificOutput"]["additionalContext"]
+
+
+def test_stop_logs_the_running_session_and_throttles(setup, monkeypatch):
+    project, root, folder = setup
+    monkeypatch.setattr(worklog, "projects_root", lambda: root)
+    data = {"cwd": str(project), "session_id": "s2"}
+    assert hooks.worklog_sync(data, DEFAULTS) is None
+    assert "Navbar colors" in worklog.log_path(project).read_text(encoding="utf-8")
+    write(folder / "s3.jsonl", session(project, "13", "Cart bug", "fix the cart", "src/cart.ts"))
+    hooks.worklog_sync({**data, "session_id": "s3"}, DEFAULTS)
+    hooks.worklog_sync({**data, "session_id": "s3"}, DEFAULTS)  # within the interval: skipped
+    text = worklog.log_path(project).read_text(encoding="utf-8")
+    assert text.count("Cart bug") == 1
+    assert hooks.worklog_sync(data, {**DEFAULTS, "worklog": False}) is None

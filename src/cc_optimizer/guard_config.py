@@ -44,6 +44,8 @@ DEFAULTS: dict[str, Any] = {
     "worklog_recent": 3,
     # Short token-efficiency rules added at session start and after compaction.
     "session_guidance": True,
+    # Language of the command line output: "auto" (system language), "en" or "tr".
+    "language": "auto",
 }
 
 

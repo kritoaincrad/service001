@@ -1,13 +1,16 @@
 """Compact project map, so Claude does not rediscover the layout in every session.
 
-The map is a file in the project (.claude/project-map.md). Only its path is added to the
+The map is a file in the project (.claude/project-map.md), next to a grep-able index
+(.claude/project-index.md) of routes, pages and symbols. Only the map path is added to the
 context at session start: content added to the context is re-read on every call, while a
-file is read once, when needed. It is regenerated when it is missing, older than a few
-hours, or when the git HEAD moved. It is kept out of git through .git/info/exclude.
+file is read once, when needed. Both are regenerated when missing, older than a few hours,
+when the git HEAD moved, or when files were added, removed or renamed. They are kept out of
+git through .git/info/exclude.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -16,9 +19,20 @@ import time
 from collections import Counter, defaultdict
 from pathlib import Path
 
+from .code_index import CodeIndex, Route, load_project_config, scan
+
 MAP_NAME = "project-map.md"
+INDEX_NAME = "project-index.md"
 STALE_SECONDS = 6 * 3600
 MAX_LINES = 200
+MAX_PAGE_LINES = 100
+MAX_PAGE_FILES = 60
+MAX_API_LINES = 60
+MAX_ENTRY_POINTS = 12
+MAX_INDEX_ROWS = 8000
+MAX_HUBS = 10
+MAX_DEP_LIST = 8
+FOLDER_INTRO_FILES = ("__init__.py", "index.ts", "index.tsx", "index.js", "mod.rs", "main.py", "main.go")
 MAX_FILES = 20_000
 DESCRIBE_MAX_FILES = 150  # one-line file descriptions only for small projects
 LIST_MAX_FILES = 10  # large projects: root files are listed only up to this many
@@ -40,6 +54,10 @@ _SKIP_PREFIXES = ("#!", "# -*-", "from __future__", "'use ", '"use ', "// @ts-",
 
 def map_path(project: Path) -> Path:
     return project / ".claude" / MAP_NAME
+
+
+def index_path(project: Path) -> Path:
+    return project / ".claude" / INDEX_NAME
 
 
 def is_project(path: Path) -> bool:
@@ -70,7 +88,13 @@ def git_head(project: Path) -> str | None:
 
 
 def list_files(project: Path) -> list[str]:
-    """Project files as posix paths, honoring .gitignore when the project is a git repository."""
+    """Project files as posix paths, honoring .gitignore and the project's `ignore` setting."""
+    cfg = load_project_config(project)
+    files = _all_files(project)
+    return [f for f in files if not cfg.ignored(f)] if cfg.ignore else files
+
+
+def _all_files(project: Path) -> list[str]:
     if (project / ".git").exists():
         try:
             out = subprocess.run(
@@ -196,7 +220,9 @@ def _tree(project: Path, files: list[str], describe_files: bool) -> list[str]:
             exts = Counter(Path(n).suffix or n for n in direct.get(d, [])).most_common(3)
             kinds = f" ({', '.join(f'{x} {c}' for x, c in exts)} here)" if exts else ""
             count = f"{total[d]} file" + ("" if total[d] == 1 else "s")
-            lines.append(f"{'  ' * depth}{d.rsplit('/', 1)[-1]}/ {count}{kinds}")
+            about = next((x for n in direct.get(d, []) if n in FOLDER_INTRO_FILES
+                          and (x := describe(project / d / n))), "")
+            lines.append(f"{'  ' * depth}{d.rsplit('/', 1)[-1]}/ {count}{kinds}" + (f" - {about}" if about else ""))
         return lines
 
     modes = ([files_mode] if describe_files else []) + [dirs_mode]
@@ -208,14 +234,101 @@ def _tree(project: Path, files: list[str], describe_files: bool) -> list[str]:
     return dirs_mode(1)[:MAX_LINES] + ["... (truncated)"]
 
 
-def build_map(project: Path) -> str:
-    files = list_files(project)
+def tree_fingerprint(project: Path, files: list[str]) -> str:
+    """Changes when a file is added, removed or renamed or the project settings change, so new pages show up
+    without waiting for a commit."""
+    text = "\0".join(files) + "\1" + load_project_config(project).raw
+    return hashlib.sha1(text.encode("utf-8", "replace")).hexdigest()[:10]
+
+
+def _route_line(r: Route) -> str:
+    target = r.file + (f":{r.line}" if r.line > 1 else "")
+    text = f"{r.path}  {target}"
+    if r.name:
+        text += f" ({r.name})"
+    if r.via:
+        text += f" <- route declared in {r.via}"
+    if r.uses:
+        text += f" | uses: {', '.join(r.uses)}"
+    return text
+
+
+def _api_lines(routes: list[Route], limit: int) -> list[str]:
+    by_file: dict[str, list[str]] = defaultdict(list)
+    for r in routes:
+        label = f"{r.method} {r.path}".strip()
+        by_file[r.file].append(label + (f" ({r.name})" if r.name else ""))
+    lines = []
+    for file, labels in by_file.items():
+        text = f"{file}: {', '.join(labels)}"
+        lines.append(text if len(text) <= 260 else text[:257] + "...")
+    if len(lines) > limit:
+        lines = lines[:limit] + [f"... {len(by_file) - limit} more files with routes (grep {INDEX_NAME})"]
+    return lines
+
+
+def _short_list(items: list[str], limit: int = MAX_DEP_LIST) -> str:
+    """File names for a one-line list; parent/name when two files share a name (index.ts, __init__.py)."""
+    shown = items[:limit]
+    base = Counter(i.rsplit("/", 1)[-1] for i in shown)
+    names = ["/".join(i.rsplit("/", 2)[-2:]) if base[i.rsplit("/", 1)[-1]] > 1 else i.rsplit("/", 1)[-1] for i in shown]
+    return ", ".join(names) + (f", +{len(items) - limit} more" if len(items) > limit else "")
+
+
+def _hub_section(idx: CodeIndex) -> list[str]:
+    """Where to look first: the files most others depend on, and the symbols most files mention."""
+    files = sorted(((f, u) for f, u in idx.importers.items() if len(u) >= 2),
+                   key=lambda kv: (-len(kv[1]), kv[0]))[:MAX_HUBS]
+    symbols = sorted(((n, c) for n, c in idx.refs.items() if not n.isupper()),  # skip CONSTANTS: not entry points
+                     key=lambda kv: (-kv[1], kv[0]))[:MAX_HUBS]
+    where = {name: f"{file}:{line}" for file, line, _, name in idx.symbols}
+    if not files and not symbols:
+        return []
+    out = ["## Hubs: a change here reaches the most code"]
+    if files:
+        out += ["Files by number of importing files:", "```", *(f"{f}  imported by {len(users)}" for f, users in files), "```"]
+    if symbols:
+        out += ["Symbols by number of other files that mention them:", "```",
+                *(f"{n}  {where.get(n, '?')}  in {c} files" for n, c in symbols), "```"]
+    return out + [""]
+
+
+def _find_sections(idx: CodeIndex) -> list[str]:
+    """Pages, server routes and entry points: the answers to 'where is X' that otherwise cost 5-6 searches."""
+    out: list[str] = []
+    if idx.entry_points:
+        out += ["## Entry points", ", ".join(idx.entry_points[:MAX_ENTRY_POINTS]), ""]
+    out += _hub_section(idx)
+    pages = sorted((r for r in idx.routes if r.kind == "page"), key=lambda r: (r.path, r.file))
+    if pages:
+        out += [f"## Pages / UI routes ({len(pages)}): route  file (component) | uses",
+                "Route paths are as written; nested routes are not joined to their parent.", "```",
+                *(_route_line(r) for r in pages[:MAX_PAGE_LINES])]
+        if len(pages) > MAX_PAGE_LINES:
+            out.append(f"... {len(pages) - MAX_PAGE_LINES} more (grep {INDEX_NAME})")
+        out += ["```", ""]
+    if idx.page_files:
+        out += [f"## Page / view files with no detected route ({len(idx.page_files)})", "```",
+                *idx.page_files[:MAX_PAGE_FILES]]
+        if len(idx.page_files) > MAX_PAGE_FILES:
+            out.append(f"... {len(idx.page_files) - MAX_PAGE_FILES} more (grep {INDEX_NAME})")
+        out += ["```", ""]
+    api = [r for r in idx.routes if r.kind == "api"]
+    if api:
+        out += [f"## Server routes / API endpoints ({len(api)}): file: METHOD path (handler)", "```",
+                *_api_lines(api, MAX_API_LINES), "```", ""]
+    return out
+
+
+def render_map(project: Path, files: list[str], idx: CodeIndex) -> str:
     head = git_head(project)
     out = [
-        f"<!-- cc-optimizer project map | head={head or '-'} | files={len(files)} -->",
+        f"<!-- cc-optimizer project map | head={head or '-'} | files={len(files)} | tree={tree_fingerprint(project, files)} -->",
         f"# Project map: {project.resolve().name}",
         "",
         "Generated by cc-optimizer from the file tree. Layout only: verify details in the code before relying on them.",
+        f"To find where something is, grep {INDEX_NAME} (same folder): it lists every route, page and top-level "
+        "symbol as `name  file:line  kind`.",
         "",
     ]
     summary = _readme_summary(project)
@@ -224,8 +337,72 @@ def build_map(project: Path) -> str:
     manifests = _manifests(project, files)
     if manifests:
         out += ["## Manifests and scripts", *manifests, ""]
+    out += _find_sections(idx)
     out += [f"## Layout ({len(files)} files)", "```", *_tree(project, files, len(files) <= DESCRIBE_MAX_FILES), "```"]
     return "\n".join(out) + "\n"
+
+
+def render_index(project: Path, files: list[str], idx: CodeIndex) -> str:
+    """One line per route, page and symbol, name first, so a single grep answers 'where is X'."""
+    head = git_head(project)
+    rows: list[tuple[str, str, str, str]] = []
+    for r in idx.routes:
+        target = r.file + (f":{r.line}" if r.line > 1 else "")
+        kind = "page" if r.kind == "page" else f"{r.method or 'route'} api"
+        rows.append((r.path, target, kind, r.name))
+    rows += [(f, f, "page-file", "") for f in idx.page_files]
+    rows += [(name, f"{file}:{line}", kind, f"refs {idx.refs[name]}" if name in idx.refs else "")
+             for file, line, kind, name in idx.symbols]
+    for file in sorted(set(idx.imports) | set(idx.importers)):
+        uses, users = idx.imports.get(file, []), idx.importers.get(file, [])
+        parts = []
+        if users:
+            parts.append(f"used by {len(users)}: {_short_list(users)}")
+        if uses:
+            parts.append(f"imports {len(uses)}: {_short_list(uses)}")
+        rows.append((file, file, "deps", "; ".join(parts)))
+    rows.sort(key=lambda row: (row[1].split(":")[0], row[0]))
+    out = [
+        f"<!-- cc-optimizer project map index | head={head or '-'} | tree={tree_fingerprint(project, files)} -->",
+        "# Project index: name  file:line  kind",
+        "Routes (page / METHOD api), view files and top-level symbols. Grep a name, a URL part or a file, e.g. "
+        f"`grep -i orders {INDEX_NAME}`. Generated by cc-optimizer; verify in the code.",
+        "",
+    ]
+    for name, target, kind, extra in rows[:MAX_INDEX_ROWS]:
+        out.append(f"{name}  {target}  {kind}" + (f"  ({extra})" if extra else ""))
+    if len(rows) > MAX_INDEX_ROWS:
+        out.append(f"... {len(rows) - MAX_INDEX_ROWS} more rows not listed")
+    return "\n".join(out) + "\n"
+
+
+def build(project: Path, files: list[str] | None = None) -> tuple[str, str]:
+    """The map and the index texts."""
+    files = list_files(project) if files is None else files
+    idx = scan(project, files, load_project_config(project))
+    return render_map(project, files, idx), render_index(project, files, idx)
+
+
+def graph_data(project: Path) -> dict:
+    """The whole index as plain JSON (files with their imports, importers and symbols, plus routes), for any
+    visualizer or script. Language-independent."""
+    files = list_files(project)
+    idx = scan(project, files, load_project_config(project))
+    symbols: dict[str, list[dict]] = defaultdict(list)
+    for file, line, kind, name in idx.symbols:
+        symbols[file].append({"name": name, "line": line, "kind": kind, "refs": idx.refs.get(name, 0)})
+    nodes = sorted(set(idx.imports) | set(idx.importers) | set(symbols) | {r.file for r in idx.routes})
+    return {
+        "project": project.resolve().name,
+        "files": [{"path": f, "imports": idx.imports.get(f, []), "used_by": idx.importers.get(f, []),
+                   "symbols": symbols.get(f, [])} for f in nodes],
+        "routes": [{"kind": r.kind, "method": r.method, "path": r.path, "file": r.file, "line": r.line, "name": r.name}
+                   for r in idx.routes],
+    }
+
+
+def build_map(project: Path) -> str:
+    return build(project)[0]
 
 
 def exclude_from_git(project: Path, entry: str = f".claude/{MAP_NAME}") -> None:
@@ -243,7 +420,7 @@ def exclude_from_git(project: Path, entry: str = f".claude/{MAP_NAME}") -> None:
         pass
 
 
-def is_stale(project: Path) -> bool:
+def is_stale(project: Path, files: list[str] | None = None) -> bool:
     path = map_path(project)
     try:
         if time.time() - path.stat().st_mtime > STALE_SECONDS:
@@ -252,17 +429,26 @@ def is_stale(project: Path) -> bool:
             first = fh.readline()
     except OSError:
         return True
+    if not index_path(project).is_file():
+        return True
     head = git_head(project)
-    return bool(head) and f"head={head}" not in first
+    if head and f"head={head}" not in first:
+        return True
+    files = list_files(project) if files is None else files
+    return f"tree={tree_fingerprint(project, files)}" not in first
 
 
 def ensure_map(project: Path, force: bool = False) -> Path | None:
-    """Create or refresh the map. Returns its path, or None when this is not a project folder."""
+    """Create or refresh the map and the index. Returns the map path, or None when this is not a project folder."""
     if not is_project(project):
         return None
     path = map_path(project)
-    if force or is_stale(project):
+    files = list_files(project)
+    if force or is_stale(project, files):
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(build_map(project), encoding="utf-8")
+        map_text, index_text = build(project, files)
+        path.write_text(map_text, encoding="utf-8")
+        index_path(project).write_text(index_text, encoding="utf-8")
         exclude_from_git(project)
+        exclude_from_git(project, f".claude/{INDEX_NAME}")
     return path

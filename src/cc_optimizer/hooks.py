@@ -13,10 +13,12 @@ import hashlib
 import json
 import os
 import re
+import time
 from pathlib import Path
 from typing import Any
 
 from .guard_config import heartbeat, load_config, load_state, log_event, save_state
+from .i18n import L
 from .shell_reads import file_prints, is_exploration
 
 SESSION_GUIDANCE = (
@@ -309,7 +311,35 @@ def routing_available(cwd: str | None) -> bool:
     return any((d / "scout.md").is_file() for d in agent_dirs(cwd))
 
 
-def session_start(data: dict[str, Any], cfg: dict[str, Any]) -> dict[str, Any] | None:
+def map_guidance(map_file: Path) -> str:
+    """What Claude is told about the project map. Only paths and how to use them: no map content enters the context."""
+    return (
+        f"Project map: {map_file.as_posix()} (layout, scripts, pages and their files, API routes, kept up to date). "
+        "Read it before exploring the codebase instead of listing directories. To find where a page, route "
+        "or symbol lives, grep project-index.md in the same folder (one line per item: name  file:line  kind) "
+        "instead of searching the tree. Its `deps` rows list what imports a file, so grep the file name there "
+        "(or run `cc-optimizer impact <file>`) to see what a change would affect."
+    )
+
+
+def _announce_late(data: dict[str, Any], cfg: dict[str, Any]) -> str | None:
+    """Everything SessionStart gives (rules, map, work log), once per session: for a session that was already open
+    when the guards were installed (SessionStart never ran for it), at its first prompt. None when it already
+    ran or there is nothing to say."""
+    session = str(data.get("session_id") or "unknown")
+    state = load_state(session)
+    if state.get("map_announced"):
+        return None
+    state["map_announced"] = True  # also when there is nothing to say: do not look again on every prompt
+    save_state(session, state)
+    parts = _start_parts(data, cfg)
+    if not parts:
+        return None
+    log_event("map_announced", session, late=True)
+    return "\n".join(parts)
+
+
+def _start_parts(data: dict[str, Any], cfg: dict[str, Any]) -> list[str]:
     parts = [SESSION_GUIDANCE] if cfg["session_guidance"] else []
     if cfg["model_routing"] and routing_available(data.get("cwd")):
         parts.append(ROUTING_RULES)
@@ -322,10 +352,7 @@ def session_start(data: dict[str, Any], cfg: dict[str, Any]) -> dict[str, Any] |
 
         map_file = ensure_map(Path(data["cwd"]))
         if map_file:
-            parts.append(
-                f"Project map: {map_file.as_posix()} (layout, scripts, one-line file descriptions, kept up to date). "
-                "Read it before exploring the codebase instead of listing directories."
-            )
+            parts.append(map_guidance(map_file))
     if cfg["worklog"] and data.get("cwd"):
         from .project_map import is_project
         from .worklog import context_text, projects_root, update
@@ -337,12 +364,62 @@ def session_start(data: dict[str, Any], cfg: dict[str, Any]) -> dict[str, Any] |
                                     data.get("source"), int(cfg["worklog_recent"]))
             if log_text:
                 parts.append(log_text)
+    return parts
+
+
+def session_start(data: dict[str, Any], cfg: dict[str, Any]) -> dict[str, Any] | None:
+    session = str(data.get("session_id") or "unknown")
+    state = load_state(session)
+    state["map_announced"] = True  # compaction or resume start again, so a later prompt need not
+    save_state(session, state)
+    parts = _start_parts(data, cfg)
     if not parts:
         return None
     return {"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": "\n".join(parts)}}
 
 
+WORKLOG_MIN_INTERVAL = 30.0  # seconds between work log writes for one session (Stop fires after every reply)
+
+
+def worklog_sync(data: dict[str, Any], cfg: dict[str, Any], final: bool = False) -> dict[str, Any] | None:
+    """Stop / SessionEnd: write the running session into the work log, so it does not wait for /compact."""
+    if not cfg["worklog"] or not data.get("cwd"):
+        return None
+    from .project_map import is_project
+    from .worklog import projects_root, update
+
+    project = Path(data["cwd"])
+    if not is_project(project):
+        return None
+    session = str(data.get("session_id") or "unknown")
+    state = load_state(session)
+    now = time.time()
+    if not final and now - float(state.get("worklog_at", 0)) < WORKLOG_MIN_INTERVAL:
+        return None
+    state["worklog_at"] = now
+    save_state(session, state)
+    update(project, projects_root())
+    return None
+
+
+def worklog_end(data: dict[str, Any], cfg: dict[str, Any]) -> dict[str, Any] | None:
+    return worklog_sync(data, cfg, final=True)
+
+
 def user_prompt_submit(data: dict[str, Any], cfg: dict[str, Any]) -> dict[str, Any] | None:
+    result = _prompt_guards(data, cfg)
+    note = _announce_late(data, cfg)
+    if not note:
+        return result
+    if result is None:
+        return {"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": note}}
+    out = result.setdefault("hookSpecificOutput", {"hookEventName": "UserPromptSubmit"})
+    existing = out.get("additionalContext")
+    out["additionalContext"] = f"{note}\n{existing}" if existing else note
+    return result
+
+
+def _prompt_guards(data: dict[str, Any], cfg: dict[str, Any]) -> dict[str, Any] | None:
     session = str(data.get("session_id") or "unknown")
     context = last_context_tokens(data.get("transcript_path"))
     state = load_state(session)
@@ -368,9 +445,11 @@ def user_prompt_submit(data: dict[str, Any], cfg: dict[str, Any]) -> dict[str, A
     save_state(session, state)
     log_event("context_warning", session, context_tokens=context)
     return {
-        "systemMessage": (
+        "systemMessage": L(
+            f"Context is {_k(context)} tokens. Every new message makes the model read all of it again. "
+            "If the topic changed, consider /clear; if you are continuing the same work, consider /compact.",
             f"Bağlam {_k(context)} token. Her yeni mesaj bu bağlamın tamamını yeniden okutuyor. "
-            "Konu değiştiyse /clear, aynı işe devam ediyorsanız /compact düşünün."
+            "Konu değiştiyse /clear, aynı işe devam ediyorsanız /compact düşünün.",
         ),
         "hookSpecificOutput": {
             "hookEventName": "UserPromptSubmit",
@@ -518,6 +597,8 @@ HANDLERS = {
     "session-start": session_start,
     "user-prompt-submit": user_prompt_submit,
     "pre-tool-use": pre_tool_use,
+    "stop": worklog_sync,
+    "session-end": worklog_end,
 }
 
 

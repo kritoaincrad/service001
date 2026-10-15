@@ -6,15 +6,18 @@ from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable
 
+from cc_optimizer.i18n import L, language
+
 from .analysis import SEGMENTS
 
-SEGMENT_LABELS = {
-    "system": "Sistem promptu",
-    "tools": "Tool tanımları ve şemalar",
-    "history": "Sohbet geçmişi",
-    "tool_results": "Tool sonuçları",
-    "user_prompt": "Son kullanıcı mesajı",
-}
+def segment_labels() -> dict[str, str]:
+    return {
+        "system": L("System prompt", "Sistem promptu"),
+        "tools": L("Tool definitions and schemas", "Tool tanımları ve şemalar"),
+        "history": L("Chat history", "Sohbet geçmişi"),
+        "tool_results": L("Tool results", "Tool sonuçları"),
+        "user_prompt": L("Last user message", "Son kullanıcı mesajı"),
+    }
 
 
 def since_iso(days: float, now: datetime | None = None) -> str:
@@ -244,7 +247,7 @@ def _n(v: Any) -> str:
 
 
 def _p(v: float) -> str:
-    return f"%{v * 100:.1f}"
+    return f"%{v * 100:.1f}" if language() == "tr" else f"{v * 100:.1f}%"
 
 
 def _table(headers: list[str], rows: list[list[str]], left: int = 1) -> list[str]:
@@ -260,76 +263,90 @@ def render_text(rep: dict[str, Any]) -> str:
     ov, tk, cost, op = rep["overview"], rep["tokens"], rep["cost"], rep["opportunities"]
     lines: list[str] = []
     period = rep["period"]
-    lines.append("LLM GATEWAY ÖLÇÜM RAPORU")
-    lines.append(f"Dönem: {period['first_request'] or '-'}  ->  {period['last_request'] or '-'}")
+    lines.append(L("LLM GATEWAY MEASUREMENT REPORT", "LLM GATEWAY ÖLÇÜM RAPORU"))
+    lines.append(L(f"Period: {period['first_request'] or '-'}  ->  {period['last_request'] or '-'}", f"Dönem: {period['first_request'] or '-'}  ->  {period['last_request'] or '-'}"))
     if period.get("tenant"):
-        lines.append(f"Kiracı: {period['tenant']}")
+        lines.append(L(f"Tenant: {period['tenant']}", f"Kiracı: {period['tenant']}"))
     lines.append("")
 
     if not ov["llm_requests"]:
-        lines.append("Bu dönemde kayıtlı LLM isteği yok.")
+        lines.append(L("No LLM requests recorded in this period.", "Bu dönemde kayıtlı LLM isteği yok."))
         return "\n".join(lines)
 
-    lines.append("GENEL")
-    lines.append(f"  LLM isteği: {_n(ov['llm_requests'])}  (başarılı {_n(ov['successful'])}, hatalı {_n(ov['failed'])})")
-    lines.append(f"  Streaming oranı: {_p(ov['streaming_share'])}")
-    lines.append(f"  Diğer API çağrıları (passthrough): {_n(ov['passthrough_requests'])}")
+    lines.append(L("OVERVIEW", "GENEL"))
+    lines.append(L(f"  LLM requests: {_n(ov['llm_requests'])}  (successful {_n(ov['successful'])}, failed {_n(ov['failed'])})", f"  LLM isteği: {_n(ov['llm_requests'])}  (başarılı {_n(ov['successful'])}, hatalı {_n(ov['failed'])})"))
+    lines.append(L(f"  Streaming share: {_p(ov['streaming_share'])}", f"  Streaming oranı: {_p(ov['streaming_share'])}"))
+    lines.append(L(f"  Other API calls (passthrough): {_n(ov['passthrough_requests'])}", f"  Diğer API çağrıları (passthrough): {_n(ov['passthrough_requests'])}"))
     if ov["estimated_usage_requests"]:
-        lines.append(f"  Sağlayıcı kullanım bilgisi vermediği için tahmin edilen: {_n(ov['estimated_usage_requests'])}")
+        lines.append(L(f"  Estimated because the provider reported no usage: {_n(ov['estimated_usage_requests'])}", f"  Sağlayıcı kullanım bilgisi vermediği için tahmin edilen: {_n(ov['estimated_usage_requests'])}"))
     for fr in ov["failure_reasons"]:
-        lines.append(f"  Hata {fr['status_code']} {fr['error'] or ''}: {_n(fr['count'])}")
+        lines.append(L(f"  Error {fr['status_code']} {fr['error'] or ''}: {_n(fr['count'])}", f"  Hata {fr['status_code']} {fr['error'] or ''}: {_n(fr['count'])}"))
     lines.append("")
 
     lines.append("TOKEN")
-    lines.append(f"  Girdi: {_n(tk['input'])}   Çıktı: {_n(tk['output'])}   Reasoning: {_n(tk['reasoning'])}")
-    lines.append(f"  Cache'ten okunan girdi: {_n(tk['cached_input'])} ({_p(tk['cached_share_of_input'])})   Cache yazımı: {_n(tk['cache_write'])}")
-    lines.append(f"  İstek başına ortalama: girdi {_n(tk['avg_input_per_request'])}, çıktı {_n(tk['avg_output_per_request'])}")
+    lines.append(L(f"  Input: {_n(tk['input'])}   Output: {_n(tk['output'])}   Reasoning: {_n(tk['reasoning'])}", f"  Girdi: {_n(tk['input'])}   Çıktı: {_n(tk['output'])}   Reasoning: {_n(tk['reasoning'])}"))
+    lines.append(L(f"  Input read from cache: {_n(tk['cached_input'])} ({_p(tk['cached_share_of_input'])})   Cache writes: {_n(tk['cache_write'])}", f"  Cache'ten okunan girdi: {_n(tk['cached_input'])} ({_p(tk['cached_share_of_input'])})   Cache yazımı: {_n(tk['cache_write'])}"))
+    lines.append(L(f"  Average per request: input {_n(tk['avg_input_per_request'])}, output {_n(tk['avg_output_per_request'])}", f"  İstek başına ortalama: girdi {_n(tk['avg_input_per_request'])}, çıktı {_n(tk['avg_output_per_request'])}"))
     lines.append("")
 
-    lines.append("MALİYET")
+    lines.append(L("COST", "MALİYET"))
     if cost["priced_requests"]:
-        lines.append(f"  Toplam: ${cost['total_usd']:,.4f}   Çıktı payı: {_p(cost['output_share'])}")
+        lines.append(L(f"  Total: ${cost['total_usd']:,.4f}   Output share: {_p(cost['output_share'])}", f"  Toplam: ${cost['total_usd']:,.4f}   Çıktı payı: {_p(cost['output_share'])}"))
     if cost["unpriced_requests"]:
         lines.append(
-            f"  Fiyatı tanımlı olmayan {_n(cost['unpriced_requests'])} istek var. "
-            f"config.yaml içindeki pricing bölümüne ekleyin: {', '.join(cost['unpriced_models'])}"
+            L(f"  {_n(cost['unpriced_requests'])} requests have no price defined. "
+            f"Add them to the pricing section in config.yaml: {', '.join(cost['unpriced_models'])}", f"  Fiyatı tanımlı olmayan {_n(cost['unpriced_requests'])} istek var. "
+            f"config.yaml içindeki pricing bölümüne ekleyin: {', '.join(cost['unpriced_models'])}")
         )
     lines.append("")
 
-    lines.append("GİRDİ TOKEN'LARI NEREYE GİDİYOR (tahmini dağılım)")
+    lines.append(L("WHERE INPUT TOKENS GO (estimated breakdown)", "GİRDİ TOKEN'LARI NEREYE GİDİYOR (tahmini dağılım)"))
+    labels = segment_labels()
     seg_rows = [
-        [SEGMENT_LABELS[s], _n(v["est_tokens"]), _p(v["share"])] for s, v in rep["input_segments"].items()
+        [labels[s], _n(v["est_tokens"]), _p(v["share"])] for s, v in rep["input_segments"].items()
     ]
-    lines += _table(["Bölüm", "Token", "Pay"], seg_rows)
-    lines.append(f"  Tahmin yöntemi: {', '.join(tk['estimate_methods']) or '-'}  Kalibrasyon katsayısı: {tk['estimate_calibration']}")
+    lines += _table([L("Segment", "Bölüm"), "Token", L("Share", "Pay")], seg_rows)
+    lines.append(L(f"  Estimation method: {', '.join(tk['estimate_methods']) or '-'}  Calibration factor: {tk['estimate_calibration']}", f"  Tahmin yöntemi: {', '.join(tk['estimate_methods']) or '-'}  Kalibrasyon katsayısı: {tk['estimate_calibration']}"))
     lines.append("")
 
-    lines.append("OPTİMİZASYON FIRSATLARI")
+    lines.append(L("OPTIMIZATION OPPORTUNITIES", "OPTİMİZASYON FIRSATLARI"))
     d = op["exact_duplicates"]
     lines.append(
-        f"  Birebir tekrar eden istek: {_n(d['requests'])} ({_p(d['share'])}), "
-        f"{_n(d['tokens'])} token, ${d['cost_usd']:,.4f}. Bunların {_n(d['deterministic_requests'])} tanesi temperature=0."
+        L(f"  Exact duplicate requests: {_n(d['requests'])} ({_p(d['share'])}), "
+        f"{_n(d['tokens'])} tokens, ${d['cost_usd']:,.4f}. {_n(d['deterministic_requests'])} of them use temperature=0.", f"  Birebir tekrar eden istek: {_n(d['requests'])} ({_p(d['share'])}), "
+        f"{_n(d['tokens'])} token, ${d['cost_usd']:,.4f}. Bunların {_n(d['deterministic_requests'])} tanesi temperature=0.")
     )
     q = op["repeated_questions_new_context"]
-    lines.append(f"  Aynı soru, farklı bağlam: {_n(q['requests'])} ({_p(q['share'])}). Semantik cache adayı.")
+    lines.append(L(f"  Same question, different context: {_n(q['requests'])} ({_p(q['share'])}). Semantic cache candidate.", f"  Aynı soru, farklı bağlam: {_n(q['requests'])} ({_p(q['share'])}). Semantik cache adayı."))
     sp = op["stable_prefix"]
     lines.append(
-        f"  Tekrar eden sistem promptu ve tool tanımı: {_n(sp['prefix_groups'])} grup, {_n(sp['requests'])} istek. "
+        L(f"  Repeated system prompt and tool definitions: {_n(sp['prefix_groups'])} groups, {_n(sp['requests'])} requests. "
+        f"Cacheable ~{_n(sp['reusable_input_tokens'])} tokens, currently read from cache {_n(sp['already_cached_tokens'])}. "
+        f"Missed: ~{_n(sp['cache_gap_tokens'])} tokens.", f"  Tekrar eden sistem promptu ve tool tanımı: {_n(sp['prefix_groups'])} grup, {_n(sp['requests'])} istek. "
         f"Cache'lenebilir ~{_n(sp['reusable_input_tokens'])} token, şu an cache'ten okunan {_n(sp['already_cached_tokens'])}. "
-        f"Kaçırılan: ~{_n(sp['cache_gap_tokens'])} token."
+        f"Kaçırılan: ~{_n(sp['cache_gap_tokens'])} token.")
     )
     ch = op["context_heavy"]
     lines.append(
-        f"  Girdisinin yarısından fazlası geçmiş ve tool sonucu olan istek: {_n(ch['requests'])} ({_p(ch['share'])}), "
-        f"~{_n(ch['context_tokens'])} token. Bağlam sıkıştırma adayı."
+        L(f"  Requests where more than half of the input is history and tool results: {_n(ch['requests'])} ({_p(ch['share'])}), "
+        f"~{_n(ch['context_tokens'])} tokens. Context compression candidate.", f"  Girdisinin yarısından fazlası geçmiş ve tool sonucu olan istek: {_n(ch['requests'])} ({_p(ch['share'])}), "
+        f"~{_n(ch['context_tokens'])} token. Bağlam sıkıştırma adayı.")
     )
     nm = op["no_max_tokens"]
-    lines.append(f"  Çıktı limiti (max_tokens) olmayan istek: {_n(nm['requests'])} ({_p(nm['share'])})")
+    lines.append(L(f"  Requests without an output limit (max_tokens): {_n(nm['requests'])} ({_p(nm['share'])})", f"  Çıktı limiti (max_tokens) olmayan istek: {_n(nm['requests'])} ({_p(nm['share'])})"))
     lines.append("")
 
-    lines.append("MODELLER")
+    lines.append(L("MODELS", "MODELLER"))
     lines += _table(
-        ["Model", "İstek", "Girdi", "Çıktı", "Ort. girdi", "Ort. çıktı", "Maliyet $"],
+        [
+            "Model",
+            L("Requests", "İstek"),
+            L("Input", "Girdi"),
+            L("Output", "Çıktı"),
+            L("Avg. input", "Ort. girdi"),
+            L("Avg. output", "Ort. çıktı"),
+            L("Cost $", "Maliyet $"),
+        ],
         [
             [m["model"], _n(m["requests"]), _n(m["input"]), _n(m["output"]), _n(m["avg_input"]), _n(m["avg_output"]), f"{m['cost_usd']:,.4f}"]
             for m in rep["by_model"]
@@ -337,23 +354,23 @@ def render_text(rep: dict[str, Any]) -> str:
     )
     lines.append("")
 
-    lines.append("KİRACI VE UYGULAMA")
+    lines.append(L("TENANT AND APP", "KİRACI VE UYGULAMA"))
     lines += _table(
-        ["Kiracı", "Uygulama", "İstek", "Token", "Maliyet $"],
+        [L("Tenant", "Kiracı"), L("App", "Uygulama"), L("Requests", "İstek"), "Token", L("Cost $", "Maliyet $")],
         [[o["tenant"], o["app"], _n(o["requests"]), _n(o["tokens"]), f"{o['cost_usd']:,.4f}"] for o in rep["by_tenant_app"]],
         left=2,
     )
     lines.append("")
 
-    lines.append("DİL")
+    lines.append(L("LANGUAGE", "DİL"))
     lines += _table(
-        ["Dil", "İstek", "Pay", "Karakter/token"],
+        [L("Language", "Dil"), L("Requests", "İstek"), L("Share", "Pay"), L("Chars/token", "Karakter/token")],
         [[lg["lang"], _n(lg["requests"]), _p(lg["share"]), _n(lg["chars_per_token"])] for lg in rep["languages"]],
     )
     lines.append("")
 
     lat = rep["latency_ms"]
-    lines.append("GECİKME (ms)")
+    lines.append(L("LATENCY (ms)", "GECİKME (ms)"))
     ms = {k: (None if v is None else round(v)) for k, v in lat.items()}
-    lines.append(f"  Toplam p50 {_n(ms['p50'])}, p95 {_n(ms['p95'])}   İlk token p50 {_n(ms['ttft_p50'])}, p95 {_n(ms['ttft_p95'])}")
+    lines.append(L(f"  Total p50 {_n(ms['p50'])}, p95 {_n(ms['p95'])}   First token p50 {_n(ms['ttft_p50'])}, p95 {_n(ms['ttft_p95'])}", f"  Toplam p50 {_n(ms['p50'])}, p95 {_n(ms['p95'])}   İlk token p50 {_n(ms['ttft_p50'])}, p95 {_n(ms['ttft_p95'])}"))
     return "\n".join(lines)

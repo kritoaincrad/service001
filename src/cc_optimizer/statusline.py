@@ -7,6 +7,7 @@ from typing import Any
 
 from .guard_config import load_config
 from .hooks import _k, last_context_tokens
+from .i18n import L
 
 _GREEN, _YELLOW, _RED, _RESET = "\033[32m", "\033[33m", "\033[31m", "\033[0m"
 
@@ -27,9 +28,10 @@ def render(data: dict[str, Any], cfg: dict[str, Any]) -> str:
     if used:
         warn, step = int(cfg["context_warn_tokens"]), int(cfg["context_step_tokens"])
         color = _GREEN if used < warn else _YELLOW if used < warn + 2 * step else _RED
-        text = f"bağlam {_k(used)}"
+        text = L(f"context {_k(used)}", f"bağlam {_k(used)}")
         if isinstance(size, (int, float)) and size:
-            text += f"/{_k(int(size))} (%{100 * used / size:.0f})"
+            pct = f"{100 * used / size:.0f}"
+            text += f"/{_k(int(size))} " + L(f"({pct}%)", f"(%{pct})")
         parts.append(f"{color}{text}{_RESET}")
     cost = (data.get("cost") or {}).get("total_cost_usd") if isinstance(data.get("cost"), dict) else None
     if isinstance(cost, (int, float)) and cost > 0:

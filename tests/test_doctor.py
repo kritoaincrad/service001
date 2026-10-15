@@ -93,6 +93,57 @@ def test_config_agents_and_duplicate_install(tmp_path, isolated_home):
     assert statuses(doctor.check_project(project))["Bu projede ikinci kurulum var"] == doctor.WARN
 
 
+def test_clean_env_drops_pythonpath(monkeypatch):
+    from cc_optimizer import installer
+
+    monkeypatch.setenv("PYTHONPATH", "/only/in/this/terminal")
+    monkeypatch.setenv("PYTHONHOME", "/x")
+    env = installer.clean_env()
+    assert "PYTHONPATH" not in env and "PYTHONHOME" not in env and "PATH" in {k.upper() for k in env}
+
+
+def test_install_refuses_a_python_that_cannot_import_the_package(monkeypatch):
+    import subprocess
+
+    from cc_optimizer import installer
+
+    installer.verify_python(sys.executable)  # the interpreter running the tests has the package
+    seen = {}
+
+    def failing(cmd, **kwargs):
+        seen["env"] = kwargs["env"]
+        return subprocess.CompletedProcess(cmd, 1, b"", b"No module named cc_optimizer")
+
+    monkeypatch.setenv("PYTHONPATH", "/only/in/this/terminal")
+    monkeypatch.setattr(installer.subprocess, "run", failing)
+    try:
+        installer.verify_python("C:/elsewhere/python.exe")
+    except installer.InstallError as exc:
+        assert "içe aktaramıyor" in str(exc) and "Hiçbir şey yazılmadı" in str(exc)
+    else:
+        raise AssertionError("expected InstallError")
+    assert "PYTHONPATH" not in seen["env"]  # the probe does not get the terminal-only help
+
+
+def test_every_hook_event_is_probed(monkeypatch):
+    import subprocess
+
+    runtime = statuses(doctor.check_runtime(sys.executable))
+    assert runtime["Tüm hook olayları çalışıyor"] == doctor.OK
+
+    real = subprocess.run
+
+    def failing_stop(cmd, **kwargs):
+        if cmd[-1] == "stop":
+            return subprocess.CompletedProcess(cmd, 2, b"", b"usage: cc-optimizer hook\ninvalid choice: 'stop'")
+        return real(cmd, **kwargs)
+
+    monkeypatch.setattr(doctor.subprocess, "run", failing_stop)
+    broken = doctor.check_runtime(sys.executable)
+    failed = next(c for c in broken if c.title == "Bazı hook olayları hata veriyor")
+    assert failed.status == doctor.FAIL and "stop: invalid choice" in failed.detail
+
+
 def _history_with(models, tag="a"):
     from cc_optimizer import history
 
@@ -108,10 +159,10 @@ def _history_with(models, tag="a"):
 
 def test_model_check_flags_ignored_default(tmp_path):
     path = installed(tmp_path)
-    settings = json.loads(path.read_text())
+    settings = json.loads(path.read_text(encoding="utf-8"))
     settings["model"] = "sonnet"
-    path.write_text(json.dumps(settings))
+    path.write_text(json.dumps(settings), encoding="utf-8")
     _history_with(["claude-opus-5-5"] * 3)
-    assert statuses(doctor.check_model(path))["Varsayılan model uygulanmıyor"] == doctor.WARN
+    assert [c.status for c in doctor.check_model(path)] == [doctor.WARN]
     _history_with(["claude-sonnet-5-5"] * 3, "b")
-    assert statuses(doctor.check_model(path))["Varsayılan model"] == doctor.OK
+    assert [c.status for c in doctor.check_model(path)] == [doctor.OK]

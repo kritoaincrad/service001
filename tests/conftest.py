@@ -11,6 +11,17 @@ from llm_gateway.config import Settings
 from llm_gateway.store import RequestStore
 
 
+@pytest.fixture(autouse=True)
+def turkish_interface(monkeypatch):
+    """Most tests assert the Turkish texts. Tests of English output set CC_OPTIMIZER_LANG=en themselves."""
+    from cc_optimizer import i18n
+
+    monkeypatch.setenv("CC_OPTIMIZER_LANG", "tr")
+    i18n.reset()
+    yield
+    i18n.reset()
+
+
 class ChunkStream(httpx.AsyncByteStream):
     def __init__(self, chunks: list[bytes]) -> None:
         self.chunks = chunks
