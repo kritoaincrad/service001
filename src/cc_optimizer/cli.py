@@ -187,6 +187,15 @@ def _doctor(args: argparse.Namespace) -> int:
     return 1 if any(c.status == FAIL for c in checks) else 0
 
 
+def _context(args: argparse.Namespace) -> int:
+    from .context_report import latest_transcript, measure, render
+
+    path = latest_transcript(Path(args.root), args.project, args.session)
+    _utf8_stdout()
+    print(render(measure(path) if path else None))
+    return 0 if path else 1
+
+
 def _map(args: argparse.Namespace) -> int:
     from .project_map import build_map, ensure_map
 
@@ -484,6 +493,12 @@ def main(argv: list[str] | None = None) -> int:
                     help="compare only projects that have sessions both before and after (like with like)")
     cp.add_argument("--markdown", action="store_true", help="print the report as a Markdown table")
     cp.set_defaults(func=_compare)
+
+    cx = sub.add_parser("context", help="what makes up the fixed load at the start of a session")
+    cx.add_argument("--root", default=str(default_root()))
+    cx.add_argument("--project", default=None, help="project folder or part of its name (default: any project)")
+    cx.add_argument("--session", default=None, help="session id or its start (default: the latest session)")
+    cx.set_defaults(func=_context)
 
     ev = sub.add_parser("events", help="what the guards did")
     ev.add_argument("--days", type=float, default=7.0)
