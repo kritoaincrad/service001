@@ -156,8 +156,23 @@ def _compare_history(args: argparse.Namespace) -> int:
     labelled = {labels.get(k, k): n for k, n in _event_counts(since).items()}
     names = (L("Without Service001", "Service001'siz"), L("With Service001", "Service001'li"))
     show = render_markdown if args.markdown else render
-    print(show(result, labelled, labels=names, title_suffix=scope, guard_tokens=guard_tokens))
+    print(show(result, labelled, labels=names, title_suffix=scope, guard_tokens=guard_tokens,
+               own_startup=_own_startup(Path(args.root), args.project)))
     return 0
+
+
+def _own_startup(root: Path, project: str | None) -> tuple[int, int] | None:
+    """(tokens added by Service001, tokens of the first call) in the latest session, or None."""
+    from .context_report import latest_transcript, measure
+
+    try:
+        path = latest_transcript(root, project)
+        result = measure(path) if path else None
+    except OSError:
+        return None
+    if not result:
+        return None
+    return sum(r["tokens"] for r in result["rows"] if r["owner"] == "service001"), result["first_call"]
 
 
 def _history(args: argparse.Namespace) -> int:

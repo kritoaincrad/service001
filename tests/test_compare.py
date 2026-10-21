@@ -45,3 +45,11 @@ def test_render_turkish_formatting_and_small_sample_warning():
     assert "13.968 çağrı" in text and "Uyarı:" in text
     assert "362K" in text and "-%59  iyi" in text and "-17,4 puan  iyi" in text
     assert "- Bağlam uzunluğu uyarısı: 1" in text
+
+
+def test_render_shows_the_own_share_of_the_startup_load_only_when_known():
+    result = compare(report(20, 13_968, 5_555_000_000, 362_230, 0.175), report(1, 174, 30_000_000, 150_000, 0.001))
+    text = render(result, own_startup=(500, 42_300))
+    assert "kendi payı" in text and "0,5K" in text.replace(".", ",") and "%1,2" in text.replace(".", ",")
+    assert "kendi payı" not in render(result)
+    assert "kendi payı" not in render(result, own_startup=(0, 0))

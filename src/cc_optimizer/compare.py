@@ -253,6 +253,19 @@ def _table(result: dict[str, Any]) -> list[tuple[str, str, str, str, str]]:
             for r in result["rows"]]
 
 
+def _own_startup(own: tuple[int, int] | None) -> list[str]:
+    """What Service001 itself adds to the start-up load, so the 'Fixed load' row is not blamed on it."""
+    if not own or not own[1]:
+        return []
+    added, total = own
+    return [L(f"Service001's own share of the start-up load: about {added / 1000:.1f}K of {total / 1000:.1f}K "
+              f"({100 * added / total:.1f}%) in the latest session. The rest is Claude Code and your account "
+              "(see: cc-optimizer context).",
+              f"Service001'in açılış yükündeki kendi payı: son oturumda {total / 1000:.1f}K içinden yaklaşık "
+              f"{added / 1000:.1f}K (%{100 * added / total:.1f}). Gerisi Claude Code ve hesabınızdan gelir "
+              "(bkz: cc-optimizer context).")]
+
+
 def _notes() -> list[str]:
     return [
         L("- The work in the two periods differs. So per-call values, medians and shares are compared, not totals.",
@@ -266,7 +279,7 @@ def _notes() -> list[str]:
 
 def render(result: dict[str, Any], events: dict[str, int] | None = None,
            labels: tuple[str, str] | None = None, title_suffix: str = "",
-           guard_tokens: dict[str, int] | None = None) -> str:
+           guard_tokens: dict[str, int] | None = None, own_startup: tuple[int, int] | None = None) -> str:
     labels = labels or (L("Before", "Önce"), L("After", "Sonra"))
     pad = max(len(labels[0]), len(labels[1])) + 2
     lines = [
@@ -287,12 +300,15 @@ def render(result: dict[str, Any], events: dict[str, int] | None = None,
         lines += ["", L("Guard events in the later period:", "Sonraki dönemde koruyucu olayları:")]
         lines += [f"- {kind}: {count}" for kind, count in sorted(events.items(), key=lambda kv: -kv[1])]
     lines += _guard_effect(guard_tokens)
+    own = _own_startup(own_startup)
+    if own:
+        lines += ["", *own]
     return "\n".join(lines + ["", L("Notes:", "Notlar:"), *_notes()])
 
 
 def render_markdown(result: dict[str, Any], events: dict[str, int] | None = None,
                     labels: tuple[str, str] | None = None, title_suffix: str = "",
-                    guard_tokens: dict[str, int] | None = None) -> str:
+                    guard_tokens: dict[str, int] | None = None, own_startup: tuple[int, int] | None = None) -> str:
     """The same report as a Markdown table, to paste into a pull request, a ticket or a team update."""
     labels = labels or (L("Before", "Önce"), L("After", "Sonra"))
     lines = [
@@ -310,7 +326,7 @@ def render_markdown(result: dict[str, Any], events: dict[str, int] | None = None
     if events:
         lines += ["", "**" + L("Guard events in the later period", "Sonraki dönemde koruyucu olayları") + "**", ""]
         lines += [f"- {kind}: {count}" for kind, count in sorted(events.items(), key=lambda kv: -kv[1])]
-    effect = _guard_effect(guard_tokens)
+    effect = _guard_effect(guard_tokens) + _own_startup(own_startup)
     if effect:
         lines += ["", *effect]
     return "\n".join(lines + ["", *(n.replace("- ", "- _", 1) + "_" for n in _notes())]) + "\n"
