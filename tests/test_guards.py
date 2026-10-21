@@ -413,3 +413,22 @@ def test_install_agents_and_subagent_model(tmp_path):
     assert sorted(p.name for p in agents.iterdir()) == ["expert.md"]
     with pytest.raises(installer.InstallError):
         installer.install(path, subagent_model="gpt", dry_run=True)
+
+
+def test_session_age_warning_once_per_band(tmp_path, isolated_home):
+    from datetime import datetime, timedelta, timezone
+
+    def aged(hours):
+        stamp = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat().replace("+00:00", "Z")
+        path = tmp_path / "aged.jsonl"
+        path.write_text(json.dumps({"type": "user", "timestamp": stamp}) + "\n", encoding="utf-8")
+        return {"session_id": "old", "transcript_path": str(path)}
+
+    assert hooks._age_warning(aged(3), cfg()) is None
+    first = hooks._age_warning(aged(9), cfg())
+    assert first and "9 saat" in first["systemMessage"]
+    assert hooks._age_warning(aged(10), cfg()) is None      # same 4-hour band
+    assert hooks._age_warning(aged(13.5), cfg()) is not None  # next band
+    assert hooks._age_warning(aged(20), {**cfg(), "session_age_hours": 0}) is None
+    merged = hooks.user_prompt_submit(aged(30), cfg())
+    assert "systemMessage" in merged and "30 hours" in merged["hookSpecificOutput"]["additionalContext"]

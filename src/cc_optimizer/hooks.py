@@ -14,6 +14,7 @@ import json
 import os
 import re
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -403,17 +404,71 @@ def worklog_end(data: dict[str, Any], cfg: dict[str, Any]) -> dict[str, Any] | N
     return worklog_sync(data, cfg, final=True)
 
 
+NL = chr(10)
+
+
 def user_prompt_submit(data: dict[str, Any], cfg: dict[str, Any]) -> dict[str, Any] | None:
     result = _prompt_guards(data, cfg)
     note = _announce_late(data, cfg)
-    if not note:
+    age = _age_warning(data, cfg)
+    if not note and not age:
         return result
     if result is None:
-        return {"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": note}}
+        result = {"hookSpecificOutput": {"hookEventName": "UserPromptSubmit"}}
     out = result.setdefault("hookSpecificOutput", {"hookEventName": "UserPromptSubmit"})
-    existing = out.get("additionalContext")
-    out["additionalContext"] = f"{note}\n{existing}" if existing else note
+    extra = [t for t in (note, age and age["additionalContext"], out.get("additionalContext")) if t]
+    out["additionalContext"] = NL.join(extra)
+    if age:
+        result["systemMessage"] = NL.join(t for t in (result.get("systemMessage"), age["systemMessage"]) if t)
     return result
+
+
+def session_age_hours(transcript_path: str | None) -> float | None:
+    """Hours since the first record of the session transcript."""
+    if not transcript_path:
+        return None
+    try:
+        with open(transcript_path, encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                try:
+                    stamp = json.loads(line).get("timestamp")
+                except ValueError:
+                    continue
+                if isinstance(stamp, str):
+                    started = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+                    return (datetime.now(timezone.utc) - started).total_seconds() / 3600
+    except (OSError, ValueError):
+        pass
+    return None
+
+
+def _age_warning(data: dict[str, Any], cfg: dict[str, Any]) -> dict[str, str] | None:
+    """A session left open for many hours: most of the usage limit goes to such sessions."""
+    limit = float(cfg["session_age_hours"])
+    if limit <= 0:
+        return None
+    age = session_age_hours(data.get("transcript_path"))
+    if age is None or age < limit:
+        return None
+    session = str(data.get("session_id") or "unknown")
+    band = int((age - limit) // max(float(cfg["session_age_step_hours"]), 0.5))
+    state = load_state(session)
+    if band <= state.get("age_band", -1):
+        return None
+    state["age_band"] = band
+    save_state(session, state)
+    log_event("session_age_warning", session, hours=round(age, 1))
+    hours = f"{age:.0f}"
+    return {
+        "systemMessage": L(
+            f"This session has been open for {hours} hours. Long sessions carry a large context into every call "
+            "and use up the usage limit fastest. Consider asking for a summary and starting a new session.",
+            f"Bu oturum {hours} saattir açık. Uzun oturumlar her çağrıya büyük bir bağlam taşır ve kullanım limitini "
+            "en hızlı tüketir. Özet isteyip yeni bir oturum açmayı düşünün."),
+        "additionalContext": (
+            f"[token guard] This session has been open for about {hours} hours. When the current request is done, "
+            "suggest in one sentence that the user lets you write a short summary of the state and open a new session."),
+    }
 
 
 def _prompt_guards(data: dict[str, Any], cfg: dict[str, Any]) -> dict[str, Any] | None:

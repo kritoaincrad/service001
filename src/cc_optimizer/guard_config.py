@@ -18,6 +18,9 @@ DEFAULTS: dict[str, Any] = {
     # Context length warning, shown once per band above the threshold.
     "context_warn_tokens": 300_000,
     "context_step_tokens": 100_000,
+    # A session open this many hours is warned once, then again every step. 0 turns it off.
+    "session_age_hours": 8,
+    "session_age_step_hours": 4,
     # Rewriting an existing file with Write: "off", "coach" (default) or "block".
     "write_guard": "coach",
     "write_min_lines": 120,

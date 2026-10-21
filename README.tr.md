@@ -96,6 +96,8 @@ Ayarlar `~/.claude/cc-optimizer/config.json` dosyasından değiştirilebilir:
 {
   "context_warn_tokens": 300000,
   "context_step_tokens": 100000,
+  "session_age_hours": 8,
+  "session_age_step_hours": 4,
   "write_guard": "coach",
   "write_min_lines": 120,
   "write_unchanged_ratio": 0.6,
