@@ -1,17 +1,69 @@
 # Service001
 
+[![CI](https://github.com/kritoaincrad/service001/actions/workflows/ci.yml/badge.svg)](https://github.com/kritoaincrad/service001/actions/workflows/ci.yml)
+![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+
 English | [Türkçe](README.tr.md)
 
-A toolkit that measures and reduces Claude Code token consumption.
-See [ROADMAP.md](ROADMAP.md) for the product vision, measurement findings and phases.
+**Measure and reduce Claude Code token consumption, without lowering the quality of the work.**
+
+Service001 reads the session records Claude Code already keeps on your computer, shows where the tokens go, and then adds small guards through Claude Code hooks that stop the habits that bloat the context. Everything runs locally. No content leaves your computer.
+
+In a before/after comparison on one developer's sessions, tokens processed per call dropped by about 55%, and unbounded large file reads dropped from 7.6 to 1.0 per 1,000 calls. Your numbers will differ: run `cc-optimizer compare` to measure your own.
+
+## Features
+
+- **Analysis:** where the tokens go, per model, per source, per tool output and per session.
+- **Context guards:** warn about long contexts, refuse whole-file reads of large files once, catch full file rewrites, show a status line.
+- **Project map:** a compact map and search index of the project, so Claude does not rediscover the layout in every session.
+- **Work log:** a per-project memory of what was done, for new or compacted chats.
+- **Model routing:** cheaper subagents for search and routine coding, a model suggestion at the first prompt.
+- **Token history and `compare`:** permanent per-session numbers, and a before/after report with confidence intervals.
+- **Health check:** `cc-optimizer doctor` verifies that the guards are installed, runnable and actually running.
+
+## Contents
+
+[Installation](#installation) · [Quick start](#quick-start) · [Analysis](#claude-code-token-analysis) · [Guards](#context-guards) · [Work log](#work-log-project-memory) · [History](#token-history) · [Project map](#project-map) · [Language](#language) · [Model routing](#model-routing) · [Gateway](#on-hold-llm-api-gateway) · [Development](#development)
 
 ## Installation
 
+Requires Python 3.11 or newer. Works on Windows, macOS and Linux.
+
 ```bash
-python -m venv .venv
-.venv/Scripts/python -m pip install -e ".[dev]"   # Windows
-# .venv/bin/python -m pip install -e ".[dev]"     # Linux / macOS
+pipx install service001                 # recommended: isolated, `cc-optimizer` on your PATH
+# or
+pip install service001
+pip install "service001[accurate]"      # exact token counts with tiktoken (default: 4 chars/token estimate)
 ```
+
+From source: `pip install -e ".[dev]"`. To remove the guards before uninstalling the package, run `cc-optimizer uninstall --scope user`.
+
+## Quick start
+
+```bash
+cc-optimizer analyze --days 7                              # where did the tokens go this week?
+cc-optimizer install --scope user --statusline --agents    # install the guards, status line and subagents
+cc-optimizer doctor                                        # check that everything runs
+cc-optimizer compare --markdown                            # later: before / after report
+```
+
+`install` keeps your existing settings, takes a backup first and `uninstall` restores what it changed. Use `--dry-run` to see the result before anything is written.
+
+## Commands
+
+| Command | Purpose |
+|---|---|
+| `analyze` | Token analysis of Claude Code sessions |
+| `install` / `uninstall` | Add or remove the guards, status line and subagents |
+| `doctor` | Health check of the installation |
+| `events` | What the guards did |
+| `history` | Permanent per-session token history |
+| `compare` | Before / after comparison |
+| `context` | What makes up the fixed load at the start of a session |
+| `map` / `impact` | Project map and "what does this change affect" |
+
+Run `cc-optimizer <command> --help` for all options. `cc-optimizer --version` prints the version.
 
 ## Claude Code token analysis
 
@@ -19,11 +71,11 @@ Claude Code records every session under `~/.claude/projects`.
 The analysis reads these records locally, sends nothing out and does not modify the records.
 
 ```bash
-.venv/Scripts/cc-optimizer analyze                  # all projects
-.venv/Scripts/cc-optimizer analyze --project .      # only the project of the current folder
-.venv/Scripts/cc-optimizer analyze --days 7         # sessions active in the last 7 days
-.venv/Scripts/cc-optimizer analyze --session 3a54   # a single session, by the start of its ID
-.venv/Scripts/cc-optimizer analyze --json           # machine-readable output
+cc-optimizer analyze                  # all projects
+cc-optimizer analyze --project .      # only the project of the current folder
+cc-optimizer analyze --days 7         # sessions active in the last 7 days
+cc-optimizer analyze --session 3a54   # a single session, by the start of its ID
+cc-optimizer analyze --json           # machine-readable output
 ```
 
 Report sections:
@@ -63,12 +115,12 @@ They do not block anything; they only inform Claude and you. The one exception i
 Install and uninstall:
 
 ```bash
-.venv/Scripts/cc-optimizer install --scope local --statusline        # this project only
-.venv/Scripts/cc-optimizer install --scope user --statusline         # all projects
-.venv/Scripts/cc-optimizer install --scope user --compact-window 400000   # also the compaction threshold
-.venv/Scripts/cc-optimizer install --scope user --bash-output-max 12000   # long shell output goes to a file
-.venv/Scripts/cc-optimizer install --scope user --dry-run            # show before writing
-.venv/Scripts/cc-optimizer uninstall --scope user                    # restores everything
+cc-optimizer install --scope local --statusline        # this project only
+cc-optimizer install --scope user --statusline         # all projects
+cc-optimizer install --scope user --compact-window 400000   # also the compaction threshold
+cc-optimizer install --scope user --bash-output-max 12000   # long shell output goes to a file
+cc-optimizer install --scope user --dry-run            # show before writing
+cc-optimizer uninstall --scope user                    # restores everything
 ```
 
 The installation preserves existing settings, takes a backup first and restores the values it changed when uninstalled.
@@ -76,7 +128,7 @@ The installation preserves existing settings, takes a backup first and restores 
 When the guards hit an error, they silently disable themselves so they do not break Claude Code. That is why you should check occasionally:
 
 ```bash
-.venv/Scripts/cc-optimizer doctor
+cc-optimizer doctor
 ```
 
 What it checks:
@@ -123,11 +175,11 @@ The default limit is about 30 thousand characters. `--bash-output-max` lowers it
 To measure the effect of the guards:
 
 ```bash
-.venv/Scripts/cc-optimizer events --days 7      # what the guards did
-.venv/Scripts/cc-optimizer compare              # before / after comparison against the baseline measurement
+cc-optimizer events --days 7      # what the guards did
+cc-optimizer compare              # before / after comparison against the baseline measurement
 ```
 
-`compare` compares the newest baseline measurement in `data/` with the sessions that started after it.
+`compare` compares the sessions recorded without Service001 (the baseline) with the sessions that started after the guards were installed, using the token history.
 Because the work in the two periods differs, it compares per-call values, medians and shares, not totals.
 The main metric is tokens processed per call. It warns if the later period has fewer than 5 sessions or 1,000 calls.
 
@@ -175,15 +227,15 @@ Each session is labeled by looking at its own record:
 | Without Service001 | No trace of the guards |
 
 ```bash
-.venv/Scripts/cc-optimizer history                     # token history by week and project
-.venv/Scripts/cc-optimizer history --project KEIMORA   # a single project
-.venv/Scripts/cc-optimizer compare --project KEIMORA   # sessions without and with Service001 in KEIMORA
-.venv/Scripts/cc-optimizer compare                     # all projects
-.venv/Scripts/cc-optimizer compare --matched           # only projects that have sessions on both sides
-.venv/Scripts/cc-optimizer compare --markdown          # a Markdown table for a pull request or a team update
+cc-optimizer history                     # token history by week and project
+cc-optimizer history --project MYAPP   # a single project
+cc-optimizer compare --project MYAPP   # sessions without and with Service001 in MYAPP
+cc-optimizer compare                     # all projects
+cc-optimizer compare --matched           # only projects that have sessions on both sides
+cc-optimizer compare --markdown          # a Markdown table for a pull request or a team update
 ```
 
-`compare` now uses this history by default. For the old file-based comparison, pass `--baseline data/baseline-2026-10-14-v2.json`.
+`compare` now uses this history by default. For a file-based comparison, pass `--baseline <file>` with a JSON report from `analyze --json`.
 
 How to read the report:
 
@@ -214,8 +266,8 @@ Dependencies come from static imports. Go, C#, Java and Kotlin connect files thr
 So that it does not enter git, it is added only to `.git/info/exclude` on this computer. The shared `.gitignore` is unchanged.
 
 ```bash
-.venv/Scripts/cc-optimizer map            # generate this folder's map now
-.venv/Scripts/cc-optimizer map --print    # show without writing
+cc-optimizer map            # generate this folder's map now
+cc-optimizer map --print    # show without writing
 cc-optimizer impact src/lib/api.ts       # files affected by a change (name alone works when unique)
 cc-optimizer map --graph > graph.json    # files, imports, importers, symbols, routes as plain JSON
 ```
@@ -245,7 +297,6 @@ For project-specific settings you can write `.claude/cc-optimizer.json` (it can 
 ## Language
 
 Output is supported in English and Turkish. Selection order: the `CC_OPTIMIZER_LANG` environment variable (`en` or `tr`), `"language": "en" | "tr" | "auto"` in `config.json`, the system language (Turkish if the system is Turkish), otherwise English. Text sent to Claude is always in English.
-The "Exploration before the first edit, median" line in the `compare` output measures its effect. At baseline the median is about 10.6 thousand tokens.
 
 ## Model routing
 
@@ -263,7 +314,7 @@ That is why routing is done at two points.
 | Model suggestion in the first prompt | In the session's first prompt, if the work is simple, Claude suggests `/model haiku` or `/model sonnet` to you. This is the only moment when switching is cheap |
 
 ```bash
-.venv/Scripts/cc-optimizer install --scope user --agents --subagent-model sonnet
+cc-optimizer install --scope user --agents --subagent-model sonnet
 ```
 
 In the first measurement, 95% of consumption was in the main chat, and 78 of the subagents' 83 calls inherited Opus.
@@ -277,17 +328,23 @@ It forwards OpenAI- and Anthropic-compatible requests as they are and records to
 It is not the current priority.
 
 ```bash
+pip install "service001[gateway]"
 cp config.example.yaml config.yaml
-.venv/Scripts/llm-gateway serve --config config.yaml --port 8080
-.venv/Scripts/llm-gateway report --days 7
+llm-gateway serve --config config.yaml --port 8080
+llm-gateway report --days 7
 ```
 
 Provider keys are read from the `.env` file. This file and `config.yaml` do not go into git.
 
-## Tests
+## Development
+
+Contributions are welcome, see [CONTRIBUTING.md](CONTRIBUTING.md). The change history is in [CHANGELOG.md](CHANGELOG.md). The product vision and measurement findings are in [ROADMAP.md](ROADMAP.md) (Turkish).
 
 ```bash
-.venv/Scripts/python -m pytest -q
+pip install -e ".[dev]"   # tests, lint, build
+python -m pytest -q
+ruff check .
+python -m build            # sdist and wheel into dist/
 ```
 
 ## Structure
@@ -314,3 +371,7 @@ src/cc_optimizer/
 src/llm_gateway/  the on-hold API gateway
 tests/
 ```
+
+## License
+
+[MIT](LICENSE)

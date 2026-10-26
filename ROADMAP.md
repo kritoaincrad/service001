@@ -78,7 +78,7 @@ Belgelere göre doğrulanması gerekenler: PreToolUse içinde girdi değiştirme
 - `doctor` komutu eklendi. Kurulumu, Python yolunu, hook'ların gerçekten çalışıp çalışmadığını ve ayarları kontrol ediyor. Hook'lar artık her çalıştığında zaman damgası bırakıyor.
 - Kalıcı token geçmişi eklendi: `history.db`. Claude Code kayıtları silse de her oturumun sayıları kalıyor.
   - **Etiketleme:** Oturumlar Service001'li ya da Service001'siz olarak kendi kayıtlarındaki izden etiketleniyor. Ortasında kurulum yapılan oturumlar karışık sayılıp karşılaştırmadan çıkarılıyor.
-  - **`compare`:** Artık bu geçmişi kullanıyor ve proje bazında çalışıyor (`--project KEIMORA`).
+  - **`compare`:** Artık bu geçmişi kullanıyor ve proje bazında çalışıyor (`--project MYAPP`).
 - Proje çalışma günlüğü eklendi: `.claude/worklog.md`.
   - **Ne yazılıyor:** Her oturumun istekleri, değişen dosyaları, komutları ve sonucu. Kayıtlardan kural tabanlı çıkarılıyor, token harcamıyor.
   - **Bağlama ne giriyor:** Yeni sohbette ve sıkıştırmadan sonra yalnızca son işlerin kısa özeti ve dosyanın yolu.
@@ -97,7 +97,7 @@ Belgelere göre doğrulanması gerekenler: PreToolUse içinde girdi değiştirme
   - Model belirtilmeyen alt ajanlar için varsayılan Sonnet.
   - İlk promptta, geçişin ucuz olduğu anda model önerisi.
 - Ölçülecek: alt ajanlarda model dağılımı, öneriden sonra oturumların hangi modelle sürdüğü.
-- İlk ölçüm (2026-10-14, KEIMORA'da 1 oturum, 260 çağrı): alt ajan hiç kullanılmadı, oturum baştan sona Opus'la sürdü. Oturum başındaki kurallar yetmedi.
+- İlk ölçüm (2026-10-14, tek projede 1 oturum, 260 çağrı): alt ajan hiç kullanılmadı, oturum baştan sona Opus'la sürdü. Oturum başındaki kurallar yetmedi.
 - Düzeltme: keşif hatırlatması eklendi.
   - **Ne yapıyor:** Ana sohbet art arda 4 arama veya okuma yapınca Claude'a keşfi scout'a vermesi söyleniyor.
   - **Neden 4:** Geçmiş oturumlarda dördüncü çağrıdan sonraki keşif, ana sohbet bağlamının %7,3'ünü (391 milyon token) taşıyordu.

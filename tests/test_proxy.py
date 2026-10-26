@@ -5,7 +5,6 @@ import json
 
 import httpx
 import pytest
-
 from conftest import Harness, make_settings, openai_sse, sse_response
 
 SYSTEM_TR = "Sen bir bankanın müşteri hizmetleri asistanısın. Kısa ve net cevap ver. " * 10

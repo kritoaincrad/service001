@@ -1,13 +1,37 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "llm-gateway"
-version = "0.1.0"
-description = "Enterprise LLM gateway - phase 1: transparent measurement proxy"
+name = "service001"
+dynamic = ["version"]
+description = "Measure and reduce Claude Code token consumption: session analysis, context guards, project map and model routing."
+readme = "README.md"
 requires-python = ">=3.11"
-dependencies = [
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Ozan Berk Aktas" }]
+keywords = ["claude-code", "tokens", "llm", "context", "hooks", "cost", "developer-tools"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Quality Assurance",
+    "Topic :: Utilities",
+]
+# No required dependencies: the hooks run on every tool call, so start-up time matters.
+dependencies = []
+
+[project.optional-dependencies]
+# Exact token counts (o200k_base) instead of the 4 chars/token estimate.
+accurate = ["tiktoken>=0.8"]
+# The on-hold LLM API gateway (llm-gateway command).
+gateway = [
     "fastapi>=0.115",
     "uvicorn>=0.30",
     "httpx>=0.27",
@@ -15,13 +39,19 @@ dependencies = [
     "pydantic>=2.7",
     "tiktoken>=0.8",
 ]
+dev = ["service001[gateway]", "pytest>=8", "ruff>=0.6", "build>=1.2"]
 
-[project.optional-dependencies]
-dev = ["pytest>=8"]
+[project.urls]
+Homepage = "https://github.com/kritoaincrad/service001"
+Issues = "https://github.com/kritoaincrad/service001/issues"
+Changelog = "https://github.com/kritoaincrad/service001/blob/main/CHANGELOG.md"
 
 [project.scripts]
-llm-gateway = "llm_gateway.cli:main"
 cc-optimizer = "cc_optimizer.cli:main"
+llm-gateway = "llm_gateway.cli:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "cc_optimizer.__version__" }
 
 [tool.setuptools.package-data]
 cc_optimizer = ["agents/*.md"]
@@ -31,3 +61,11 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 140
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = ["E501"]

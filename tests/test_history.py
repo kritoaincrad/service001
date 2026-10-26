@@ -4,11 +4,11 @@ import json
 import os
 
 import pytest
+from test_cc_optimizer import assistant, sample_session, write_jsonl
 
 from cc_optimizer import history
 from cc_optimizer.cli import main
 from cc_optimizer.history import maybe_sync_in_background  # before conftest replaces it
-from test_cc_optimizer import assistant, sample_session, write_jsonl
 
 GUARD_CONTEXT = {"type": "attachment", "attachment": {
     "type": "hook_additional_context", "content": ["Token efficiency rules for this session:\n- ..."]}}
@@ -24,9 +24,9 @@ def make_root(tmp_path):
     plain = sample_session()
     guarded = [GUARD_CONTEXT] + [{**e, "timestamp": "2026-10-20T10:00:00.000Z"} if e.get("type") == "assistant" else e
                                  for e in sample_session()]
-    write_jsonl(root / "C--work-KEIMORA" / "old1.jsonl", plain)
-    write_jsonl(root / "C--work-KEIMORA" / "new1.jsonl", guarded)
-    write_jsonl(root / "C--work-KEIMORA" / "new1" / "subagents" / "agent-a.jsonl",
+    write_jsonl(root / "C--work-MYAPP" / "old1.jsonl", plain)
+    write_jsonl(root / "C--work-MYAPP" / "new1.jsonl", guarded)
+    write_jsonl(root / "C--work-MYAPP" / "new1" / "subagents" / "agent-a.jsonl",
                 [{**assistant("x1", [{"type": "text", "text": "done"}], ctx=(5, 3_000, 0)), "isSidechain": True}])
     write_jsonl(root / "C--work-other" / "o1.jsonl", plain)
     return root
@@ -43,7 +43,7 @@ def test_sync_labels_sessions_and_keeps_rows_after_cleanup(tmp_path):
     assert by_id["old1"]["calibration"] == history.DEFAULT_CALIBRATION  # too few samples to calibrate
 
     assert history.sync(root, con, fast=True)["updated"] == 0  # unchanged transcripts are skipped
-    path = root / "C--work-KEIMORA" / "old1.jsonl"
+    path = root / "C--work-MYAPP" / "old1.jsonl"
     path.write_text(path.read_text(encoding="utf-8") + json.dumps(assistant("r9", [], ctx=(5, 0, 50_000))) + "\n",
                     encoding="utf-8")
     os.utime(path, (path.stat().st_atime, path.stat().st_mtime + 10))
@@ -57,8 +57,8 @@ def test_sync_labels_sessions_and_keeps_rows_after_cleanup(tmp_path):
 def test_rows_filter_by_project_name(tmp_path):
     con = history.connect()
     history.sync(make_root(tmp_path), con, fast=True)
-    assert {r["session_id"] for r in history.rows(con, "keimora")} == {"old1", "new1"}
-    assert [r["session_id"] for r in history.rows(con, "KEIMORA", guarded=True)] == ["new1"]
+    assert {r["session_id"] for r in history.rows(con, "myapp")} == {"old1", "new1"}
+    assert [r["session_id"] for r in history.rows(con, "MYAPP", guarded=True)] == ["new1"]
 
 
 def test_as_report_feeds_compare(tmp_path):
@@ -79,10 +79,10 @@ def test_history_and_compare_commands(tmp_path, capsys):
     root = str(make_root(tmp_path))
     assert main(["history", "--root", root, "--fast", "--weeks", "520"]) == 0
     out = capsys.readouterr().out
-    assert "Kayıtta 3 oturum var" in out and "C--work-KEIMORA" in out and "1/3" in out
-    assert main(["compare", "--root", root, "--fast", "--project", "KEIMORA"]) == 0
+    assert "Kayıtta 3 oturum var" in out and "C--work-MYAPP" in out and "1/3" in out
+    assert main(["compare", "--root", root, "--fast", "--project", "MYAPP"]) == 0
     out = capsys.readouterr().out
-    assert "Service001'siz:" in out and "Service001'li:" in out and "(KEIMORA)" in out
+    assert "Service001'siz:" in out and "Service001'li:" in out and "(MYAPP)" in out
     assert main(["compare", "--root", root, "--fast", "--project", "other"]) == 0
     assert "Service001'li 0" in capsys.readouterr().out
 

@@ -21,6 +21,7 @@ import json
 import sys
 from pathlib import Path
 
+from . import __version__
 from .i18n import L, plural
 
 
@@ -122,7 +123,7 @@ def _compare(args: argparse.Namespace) -> int:
 
 def _compare_history(args: argparse.Namespace) -> int:
     from .compare import compare, render, render_markdown
-    from .history import (as_report, connect, project_mix, project_overlap, rows, session_samples, sync)
+    from .history import as_report, connect, project_mix, project_overlap, rows, session_samples, sync
 
     con = connect()
     sync(Path(args.root), con, fast=args.fast)
@@ -425,6 +426,7 @@ def _events(args: argparse.Namespace) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="cc-optimizer", description="Claude Code token analysis and guards")
+    parser.add_argument("--version", action="version", version=f"Service001 {__version__}")
     sub = parser.add_subparsers(dest="command", required=True)
 
     an = sub.add_parser("analyze", help="report where tokens go in Claude Code sessions")
@@ -468,7 +470,7 @@ def main(argv: list[str] | None = None) -> int:
         p.set_defaults(func=lambda a, r=remove: _install(a, remove=r))
 
     hs = sub.add_parser("history", help="permanent per-session token history")
-    hs.add_argument("--project", default=None, help="project name or part of it, e.g. KEIMORA")
+    hs.add_argument("--project", default=None, help="project name or part of it, e.g. MYAPP")
     hs.add_argument("--weeks", type=int, default=8)
     hs.add_argument("--root", default=str(default_root()))
     hs.add_argument("--fast", action="store_true")
@@ -501,7 +503,7 @@ def main(argv: list[str] | None = None) -> int:
                     help="compare transcripts with this analyze --json file instead of using the history")
     cp.add_argument("--since", default=None, help="with --baseline: sessions started at or after this date")
     cp.add_argument("--root", default=str(default_root()))
-    cp.add_argument("--project", default=None, help="project name or part of it, e.g. KEIMORA")
+    cp.add_argument("--project", default=None, help="project name or part of it, e.g. MYAPP")
     cp.add_argument("--fast", action="store_true")
     cp.add_argument("--json", action="store_true")
     cp.add_argument("--matched", action="store_true",

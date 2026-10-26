@@ -379,7 +379,8 @@ def test_model_advice_only_on_the_first_prompt(tmp_path, isolated_home):
 
 def test_routing_rules_only_when_agents_are_installed(tmp_path, monkeypatch):
     monkeypatch.setattr(hooks.Path, "home", lambda: tmp_path / "nohome")
-    text = lambda: hooks.session_start({"cwd": str(tmp_path)}, cfg(session_guidance=True, model_routing=True))["hookSpecificOutput"]["additionalContext"]
+    def text():
+        return hooks.session_start({"cwd": str(tmp_path)}, cfg(session_guidance=True, model_routing=True))["hookSpecificOutput"]["additionalContext"]
     assert "scout" not in text()
     (tmp_path / ".claude" / "agents").mkdir(parents=True)
     (tmp_path / ".claude" / "agents" / "scout.md").write_text("x", encoding="utf-8")

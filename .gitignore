@@ -9,3 +9,9 @@ config.yaml
 .claude/settings.local.json
 .claude/*.bak-*
 .claude/
+
+dist/
+build/
+.ruff_cache/
+# local usage reports contain project names
+reports/

@@ -10,6 +10,7 @@ from cc_optimizer.i18n import L, language
 
 from .analysis import SEGMENTS
 
+
 def segment_labels() -> dict[str, str]:
     return {
         "system": L("System prompt", "Sistem promptu"),

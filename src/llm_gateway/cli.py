@@ -9,7 +9,11 @@ import os
 import sys
 from pathlib import Path
 
-from .config import load_settings
+try:
+    from .config import load_settings
+except ImportError as exc:  # the gateway dependencies are an optional extra
+    load_settings = None
+    _MISSING_DEPENDENCY = exc
 
 
 def load_dotenv(path: str | Path = ".env") -> None:
@@ -59,6 +63,10 @@ def _report(args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    if load_settings is None:
+        print(f"llm-gateway needs its optional dependencies ({_MISSING_DEPENDENCY}).", file=sys.stderr)
+        print('Install them with: pip install "service001[gateway]"', file=sys.stderr)
+        return 1
     parser = argparse.ArgumentParser(prog="llm-gateway", description="Enterprise LLM gateway, phase 1")
     sub = parser.add_subparsers(dest="command", required=True)
 

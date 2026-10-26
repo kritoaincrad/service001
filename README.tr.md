@@ -1,17 +1,69 @@
 # Service001
 
+[![CI](https://github.com/kritoaincrad/service001/actions/workflows/ci.yml/badge.svg)](https://github.com/kritoaincrad/service001/actions/workflows/ci.yml)
+![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+
 [English](README.md) | Türkçe
 
-Claude Code token tüketimini ölçen ve azaltan araç seti.
-Ürün vizyonu, ölçüm bulguları ve fazlar için [ROADMAP.md](ROADMAP.md) dosyasına bakın.
+**Claude Code token tüketimini, işin kalitesini düşürmeden ölçün ve azaltın.**
+
+Service001, Claude Code'un bilgisayarınızda zaten tuttuğu oturum kayıtlarını okur, token'ların nereye gittiğini gösterir ve Claude Code hook'ları üzerinden bağlamı şişiren alışkanlıkları yakalayan küçük koruyucular ekler. Her şey yerelde çalışır, hiçbir içerik bilgisayarınızdan çıkmaz.
+
+Bir geliştiricinin oturumlarında yapılan önce/sonra karşılaştırmasında çağrı başına işlenen token yaklaşık %55 azaldı, sınırsız büyük dosya okuması 1000 çağrıda 7,6'dan 1,0'a indi. Sizin sonuçlarınız farklı olacaktır: kendi verinizi `cc-optimizer compare` ile ölçün.
+
+## Özellikler
+
+- **Analiz:** token'ların modele, kaynağa, araç çıktısına ve oturuma göre nereye gittiği.
+- **Bağlam koruyucuları:** uzayan bağlamı uyarır, büyük dosyaların tamamını okumayı bir kez reddeder, dosyaların baştan yazılmasını yakalar, durum satırı gösterir.
+- **Proje haritası:** Claude her oturumda yapıyı yeniden keşfetmesin diye projenin kompakt haritası ve arama dizini.
+- **Çalışma günlüğü:** yeni veya sıkıştırılmış sohbetler için projede nelerin yapıldığının hafızası.
+- **Model yönlendirme:** arama ve rutin kodlama için ucuz alt ajanlar, ilk istemde model önerisi.
+- **Token geçmişi ve `compare`:** kalıcı oturum sayıları ve güven aralıklı önce/sonra raporu.
+- **Sağlık kontrolü:** `cc-optimizer doctor`, koruyucuların kurulu, çalışabilir ve gerçekten çalışıyor olduğunu doğrular.
+
+## İçindekiler
+
+[Kurulum](#kurulum) · [Hızlı başlangıç](#hızlı-başlangıç) · [Analiz](#claude-code-token-analizi) · [Koruyucular](#bağlam-koruyucuları) · [Günlük](#çalışma-günlüğü-proje-hafızası) · [Geçmiş](#token-geçmişi) · [Harita](#proje-haritası) · [Dil](#dil) · [Model yönlendirme](#model-yönlendirme) · [Gateway](#beklemede-llm-api-gateway) · [Geliştirme](#geliştirme)
 
 ## Kurulum
 
+Python 3.11 veya üstü gerekir. Windows, macOS ve Linux'ta çalışır.
+
 ```bash
-python -m venv .venv
-.venv/Scripts/python -m pip install -e ".[dev]"   # Windows
-# .venv/bin/python -m pip install -e ".[dev]"     # Linux / macOS
+pipx install service001                 # önerilen: yalıtılmış, `cc-optimizer` PATH'inizde
+# veya
+pip install service001
+pip install "service001[accurate]"      # tiktoken ile kesin token sayımı (varsayılan: 4 karakter = 1 token tahmini)
 ```
+
+Kaynaktan: `pip install -e ".[dev]"`. Paketi kaldırmadan önce koruyucuları `cc-optimizer uninstall --scope user` ile geri alın.
+
+## Hızlı başlangıç
+
+```bash
+cc-optimizer analyze --days 7                              # bu hafta token'lar nereye gitti?
+cc-optimizer install --scope user --statusline --agents    # koruyucuları, durum satırını ve alt ajanları kur
+cc-optimizer doctor                                        # her şeyin çalıştığını kontrol et
+cc-optimizer compare --markdown                            # sonra: önce / sonra raporu
+```
+
+`install` mevcut ayarlarınızı korur, önce yedek alır; `uninstall` değiştirdiklerini geri yükler. Hiçbir şey yazılmadan sonucu görmek için `--dry-run` kullanın.
+
+## Komutlar
+
+| Komut | Amaç |
+|---|---|
+| `analyze` | Claude Code oturumlarının token analizi |
+| `install` / `uninstall` | Koruyucuları, durum satırını ve alt ajanları ekler veya kaldırır |
+| `doctor` | Kurulumun sağlık kontrolü |
+| `events` | Koruyucuların ne yaptığı |
+| `history` | Kalıcı oturum bazlı token geçmişi |
+| `compare` | Önce / sonra karşılaştırması |
+| `context` | Oturum başındaki sabit yükün neyden oluştuğu |
+| `map` / `impact` | Proje haritası ve "bu değişiklik neyi etkiler" |
+
+Tüm seçenekler için `cc-optimizer <komut> --help`. `cc-optimizer --version` sürümü yazar.
 
 ## Claude Code token analizi
 
@@ -19,11 +71,11 @@ Claude Code her oturumu `~/.claude/projects` altında kaydeder.
 Analiz bu kayıtları yerelde okur, hiçbir şeyi dışarı göndermez ve kayıtları değiştirmez.
 
 ```bash
-.venv/Scripts/cc-optimizer analyze                  # tüm projeler
-.venv/Scripts/cc-optimizer analyze --project .      # yalnızca bulunduğunuz klasörün projesi
-.venv/Scripts/cc-optimizer analyze --days 7         # son 7 günde aktif oturumlar
-.venv/Scripts/cc-optimizer analyze --session 3a54   # tek oturum, kimliğin başıyla
-.venv/Scripts/cc-optimizer analyze --json           # makine okunur çıktı
+cc-optimizer analyze                  # tüm projeler
+cc-optimizer analyze --project .      # yalnızca bulunduğunuz klasörün projesi
+cc-optimizer analyze --days 7         # son 7 günde aktif oturumlar
+cc-optimizer analyze --session 3a54   # tek oturum, kimliğin başıyla
+cc-optimizer analyze --json           # makine okunur çıktı
 ```
 
 Rapor bölümleri:
@@ -63,12 +115,12 @@ Claude Code hook'ları ile çalışan, bağlamı şişiren davranışları yakal
 Kurulum ve kaldırma:
 
 ```bash
-.venv/Scripts/cc-optimizer install --scope local --statusline        # yalnızca bu proje
-.venv/Scripts/cc-optimizer install --scope user --statusline         # tüm projeler
-.venv/Scripts/cc-optimizer install --scope user --compact-window 400000   # sıkıştırma eşiği de
-.venv/Scripts/cc-optimizer install --scope user --bash-output-max 12000   # uzun kabuk çıktısı dosyaya
-.venv/Scripts/cc-optimizer install --scope user --dry-run            # yazmadan önce göster
-.venv/Scripts/cc-optimizer uninstall --scope user                    # her şeyi eski haline getirir
+cc-optimizer install --scope local --statusline        # yalnızca bu proje
+cc-optimizer install --scope user --statusline         # tüm projeler
+cc-optimizer install --scope user --compact-window 400000   # sıkıştırma eşiği de
+cc-optimizer install --scope user --bash-output-max 12000   # uzun kabuk çıktısı dosyaya
+cc-optimizer install --scope user --dry-run            # yazmadan önce göster
+cc-optimizer uninstall --scope user                    # her şeyi eski haline getirir
 ```
 
 Kurulum mevcut ayarları korur, önce yedek alır ve kaldırıldığında değiştirdiği değerleri geri yükler.
@@ -76,7 +128,7 @@ Kurulum mevcut ayarları korur, önce yedek alır ve kaldırıldığında deği�
 Koruyucular hata verdiğinde Claude Code'u bozmamak için sessizce devre dışı kalır. Bu yüzden ara sıra kontrol edin:
 
 ```bash
-.venv/Scripts/cc-optimizer doctor
+cc-optimizer doctor
 ```
 
 Kontrol ettikleri:
@@ -123,11 +175,11 @@ Varsayılan sınır yaklaşık 30 bin karakterdir. `--bash-output-max` bunu dü�
 Koruyucuların etkisini ölçmek için:
 
 ```bash
-.venv/Scripts/cc-optimizer events --days 7      # koruyucular ne yaptı
-.venv/Scripts/cc-optimizer compare              # başlangıç ölçümüyle önce / sonra karşılaştırması
+cc-optimizer events --days 7      # koruyucular ne yaptı
+cc-optimizer compare              # başlangıç ölçümüyle önce / sonra karşılaştırması
 ```
 
-`compare`, `data/` içindeki en yeni başlangıç ölçümünü, ondan sonra başlayan oturumlarla karşılaştırır.
+`compare`, Service001'siz kaydedilen oturumları (başlangıç ölçümü), koruyucular kurulduktan sonra başlayan oturumlarla token geçmişi üzerinden karşılaştırır.
 İki dönemdeki işler farklı olduğu için toplamları değil, çağrı başına değerleri, medyanları ve payları karşılaştırır.
 Asıl ölçüt çağrı başına işlenen token'dır. Sonraki dönemde 5 oturum veya 1.000 çağrıdan az veri varsa uyarı verir.
 
@@ -175,15 +227,15 @@ Her oturum kendi kaydına bakılarak etiketlenir:
 | Service001'siz | Koruyucuların izi yok |
 
 ```bash
-.venv/Scripts/cc-optimizer history                     # hafta ve proje bazında token geçmişi
-.venv/Scripts/cc-optimizer history --project KEIMORA   # tek proje
-.venv/Scripts/cc-optimizer compare --project KEIMORA   # KEIMORA'da Service001'siz ve Service001'li oturumlar
-.venv/Scripts/cc-optimizer compare                     # tüm projeler
-.venv/Scripts/cc-optimizer compare --matched           # yalnızca iki tarafta da oturumu olan projeler
-.venv/Scripts/cc-optimizer compare --markdown          # pull request veya ekip güncellemesi için Markdown tablo
+cc-optimizer history                     # hafta ve proje bazında token geçmişi
+cc-optimizer history --project MYAPP   # tek proje
+cc-optimizer compare --project MYAPP   # MYAPP'da Service001'siz ve Service001'li oturumlar
+cc-optimizer compare                     # tüm projeler
+cc-optimizer compare --matched           # yalnızca iki tarafta da oturumu olan projeler
+cc-optimizer compare --markdown          # pull request veya ekip güncellemesi için Markdown tablo
 ```
 
-`compare` artık varsayılan olarak bu geçmişi kullanır. Eski dosya tabanlı karşılaştırma için `--baseline data/baseline-2026-10-14-v2.json` verilir.
+`compare` artık varsayılan olarak bu geçmişi kullanır. Dosya tabanlı karşılaştırma için `analyze --json` çıktısı olan bir dosya `--baseline <dosya>` ile verilir.
 
 Raporu okumak için:
 
@@ -214,8 +266,8 @@ Bağımlılıklar statik import'lardan gelir. Go, C#, Java ve Kotlin dosyaları 
 Git'e girmemesi için yalnızca bu bilgisayardaki `.git/info/exclude` dosyasına eklenir. Paylaşılan `.gitignore` değişmez.
 
 ```bash
-.venv/Scripts/cc-optimizer map            # bu klasörün haritasını şimdi üret
-.venv/Scripts/cc-optimizer map --print    # yazmadan göster
+cc-optimizer map            # bu klasörün haritasını şimdi üret
+cc-optimizer map --print    # yazmadan göster
 cc-optimizer impact src/lib/api.ts       # değişiklikten etkilenen dosyalar (tekilse sadece ad yeter)
 cc-optimizer map --graph > graph.json    # dosyalar, import'lar, semboller, route'lar düz JSON olarak
 ```
@@ -245,7 +297,6 @@ Projeye özel ayar için `.claude/cc-optimizer.json` yazılabilir (commit edilip
 ## Dil
 
 Çıktı İngilizce ve Türkçe desteklenir. Seçim sırası: `CC_OPTIMIZER_LANG` ortam değişkeni (`en` veya `tr`), `config.json` içinde `"language": "en" | "tr" | "auto"`, sistem dili (Türkçeyse Türkçe), yoksa İngilizce. Claude'a giden metinler her zaman İngilizcedir.
-`compare` çıktısındaki "İlk değişiklikten önceki keşif" satırı etkisini ölçer. Başlangıçta medyan yaklaşık 10,6 bin token.
 
 ## Model yönlendirme
 
@@ -263,7 +314,7 @@ Bu yüzden yönlendirme iki noktada yapılır.
 | İlk promptta model önerisi | Oturumun ilk promptunda, iş basitse Claude size `/model haiku` veya `/model sonnet` önerir. Geçişin ucuz olduğu tek an budur |
 
 ```bash
-.venv/Scripts/cc-optimizer install --scope user --agents --subagent-model sonnet
+cc-optimizer install --scope user --agents --subagent-model sonnet
 ```
 
 İlk ölçümde tüketimin %95'i ana sohbetteydi ve alt ajanların 83 çağrısından 78'i Opus'u miras alıyordu.
@@ -277,17 +328,23 @@ OpenAI ve Anthropic uyumlu istekleri olduğu gibi iletir ve token, maliyet ve ge
 Şu anki öncelik değildir.
 
 ```bash
+pip install "service001[gateway]"
 cp config.example.yaml config.yaml
-.venv/Scripts/llm-gateway serve --config config.yaml --port 8080
-.venv/Scripts/llm-gateway report --days 7
+llm-gateway serve --config config.yaml --port 8080
+llm-gateway report --days 7
 ```
 
 Sağlayıcı anahtarları `.env` dosyasından okunur. Bu dosya ve `config.yaml` git'e girmez.
 
-## Test
+## Geliştirme
+
+Katkılarınızı bekleriz, bkz. [CONTRIBUTING.md](CONTRIBUTING.md). Değişiklik geçmişi [CHANGELOG.md](CHANGELOG.md) dosyasında. Ürün vizyonu ve ölçüm bulguları [ROADMAP.md](ROADMAP.md) dosyasında.
 
 ```bash
-.venv/Scripts/python -m pytest -q
+pip install -e ".[dev]"   # test, lint, derleme
+python -m pytest -q
+ruff check .
+python -m build            # sdist ve wheel dist/ içine
 ```
 
 ## Yapı
@@ -314,3 +371,7 @@ src/cc_optimizer/
 src/llm_gateway/  beklemedeki API gateway
 tests/
 ```
+
+## Lisans
+
+[MIT](LICENSE)

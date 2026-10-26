@@ -124,7 +124,7 @@ class ProjectConfig:
     """Optional per-project settings, .claude/cc-optimizer.json (safe to commit and share):
 
     {"ignore": ["legacy/**", "*.generated.ts"],
-     "routes": [{"files": "src/**/*.ts", "regex": "registerPage\(\"(?P<path>[^\"]+)\"", "kind": "page"}]}
+     "routes": [{"files": "src/**/*.ts", "regex": "registerPage\\(\"(?P<path>[^\"]+)\"", "kind": "page"}]}
 
     A custom route regex needs a `path` group and may have `method` and `name` groups.
     """
